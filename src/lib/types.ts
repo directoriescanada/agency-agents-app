@@ -602,12 +602,64 @@ export interface ProjectInfo {
 
 export type SidebarSection =
   | "dashboard"
+  | "office"
   | "personas"
   | "tools"
   | "teams"
   | "projects"
   | "runbooks"
   | "activity";
+
+// =========================================================
+// Office — the isometric office and its task runner
+// (`src-tauri/src/office/mod.rs`)
+// =========================================================
+
+export type OfficeTaskStatus = "running" | "done" | "error" | "cancelled";
+
+/** One office task. Mirrors `office::TaskRecord`. */
+export interface OfficeTask {
+  id: string;
+  agentSlug: string;
+  agentName: string;
+  department: string;
+  prompt: string;
+  status: OfficeTaskStatus;
+  /** RFC 3339. */
+  startedAt: string;
+  finishedAt?: string;
+  /** Final deliverable (Markdown). While running, the text streamed so far. */
+  output: string;
+  toolsUsed: string[];
+  deliverablePath?: string;
+  costUsd?: number;
+  durationMs?: number;
+  numTurns?: number;
+  error?: string;
+}
+
+/** `office:task` event payload. Mirrors `office::TaskEvent`. */
+export type OfficeTaskEvent =
+  | { kind: "started"; task: OfficeTask }
+  | { kind: "delta"; taskId: string; text: string }
+  | { kind: "tool"; taskId: string; tool: string }
+  | { kind: "finished"; task: OfficeTask };
+
+/** Mirrors `office::RunnerStatus`. */
+export interface OfficeRunnerStatus {
+  available: boolean;
+  /** Signed in per `claude auth status`; undefined when unknown. */
+  loggedIn?: boolean;
+  path?: string;
+  version?: string;
+  workspace: string;
+}
+
+/** Mirrors `office::RouteResult`. */
+export interface OfficeRouteResult {
+  agentSlug: string;
+  via: "claude" | "fallback";
+}
 
 export type ThemePreference = "light" | "dark" | "system";
 

@@ -28,6 +28,7 @@
     { kind: "command", id: "projects",  label: i18n.t("palette.openProjects"),  shortcut: shortcut("4"), section: i18n.t("palette.nav"), run: () => ui.setSection("projects") },
     { kind: "command", id: "runbooks",  label: i18n.t("palette.openRunbooks"),  shortcut: shortcut("5"), section: i18n.t("palette.nav"), run: () => ui.setSection("runbooks") },
     { kind: "command", id: "activity",  label: i18n.t("palette.openActivity"),  shortcut: shortcut("6"), section: i18n.t("palette.nav"), run: () => ui.setSection("activity") },
+    { kind: "command", id: "office",    label: i18n.t("palette.openOffice"),    shortcut: shortcut("7"), section: i18n.t("palette.nav"), run: () => ui.setSection("office") },
     { kind: "command", id: "drawer",    label: i18n.t("palette.toggleActivityDrawer"), shortcut: shortcut("L"), section: i18n.t("palette.view"), run: () => ui.toggleDrawer() },
     { kind: "command", id: "playbook",  label: i18n.t("palette.openPlaybook"), section: i18n.t("palette.help"), run: () => ui.openPlaybook() },
   ]);

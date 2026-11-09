@@ -6,11 +6,13 @@
   import FolderGit2 from "@lucide/svelte/icons/folder-git-2";
   import Rocket from "@lucide/svelte/icons/rocket";
   import Activity from "@lucide/svelte/icons/activity";
+  import Building2 from "@lucide/svelte/icons/building-2";
 
   import { ui } from "$lib/stores/ui.svelte";
   import { corpus } from "$lib/stores/corpus.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
   import { install } from "$lib/stores/install.svelte";
+  import { office } from "$lib/stores/office.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { shortcut } from "$lib/util/platform";
   import type { SidebarSection } from "$lib/types";
@@ -27,6 +29,7 @@
   // (⌘ on macOS, Ctrl elsewhere) since the app ships on macOS/Linux/Windows.
   const nav: NavItem[] = [
     { id: "dashboard", shortcut: shortcut("0"), icon: LayoutDashboard },
+    { id: "office",    shortcut: shortcut("7"), icon: Building2 },
     { id: "personas",  shortcut: shortcut("1"), icon: Bot },
     { id: "tools",     shortcut: shortcut("2"), icon: Wrench },
     { id: "teams",     shortcut: shortcut("3"), icon: Users },
@@ -37,6 +40,7 @@
 
   function label(id: SidebarSection): string {
     if (id === "dashboard") return i18n.t("nav.dashboard");
+    if (id === "office") return i18n.t("nav.office");
     if (id === "personas") return i18n.t("nav.agents");
     if (id === "tools") return i18n.t("nav.tools");
     if (id === "teams") return i18n.t("nav.teams");
@@ -46,6 +50,10 @@
   }
 
   function badge(id: SidebarSection): string | null {
+    if (id === "office") {
+      const n = office.running.length;
+      return n > 0 ? String(n) : null;
+    }
     if (id === "personas") {
       // Installed agents with a newer version in the catalog — "updates
       // available". (Matches the "N updates" action on the Agents view. Other

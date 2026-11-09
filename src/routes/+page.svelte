@@ -4,6 +4,7 @@
   import Sidebar from "$lib/components/Sidebar.svelte";
   import ResizeHandle from "$lib/components/ResizeHandle.svelte";
   import AgencyDashboard from "$lib/components/AgencyDashboard.svelte";
+  import Office from "$lib/components/Office.svelte";
   import Teams from "$lib/components/Teams.svelte";
   import Projects from "$lib/components/Projects.svelte";
   import AgentsWorkspace from "$lib/components/AgentsWorkspace.svelte";
@@ -40,6 +41,7 @@
 
   function sectionTitle(s: SidebarSection): string {
     if (s === "dashboard") return i18n.t("nav.dashboard");
+    if (s === "office") return i18n.t("nav.office");
     if (s === "personas") return i18n.t("nav.agents");
     if (s === "tools") return i18n.t("nav.tools");
     if (s === "teams") return i18n.t("nav.teams");
@@ -92,10 +94,11 @@
     if (meta && e.key === "]") { e.preventDefault(); ui.forward(); return; }
 
     // Cmd+0..6: agency section nav. Matches the sidebar.
-    if (meta && ["0","1","2","3","4","5","6"].includes(e.key)) {
+    if (meta && ["0","1","2","3","4","5","6","7"].includes(e.key)) {
       e.preventDefault();
       const map: Record<string, SidebarSection> = {
         "0": "dashboard",
+        "7": "office",
         "1": "personas",
         "2": "tools",
         "3": "teams",
@@ -223,6 +226,8 @@
         <div class="section-pane">
           {#if ui.section === "dashboard"}
             <AgencyDashboard />
+          {:else if ui.section === "office"}
+            <Office />
           {:else if ui.section === "tools"}
             <ToolsView />
           {:else if ui.section === "teams"}

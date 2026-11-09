@@ -62,6 +62,7 @@ export type VibrancyMaterial = (typeof VIBRANCY_MATERIALS)[number];
     in one place. Mirrors the `SidebarSection` union in `types.ts`. */
 const DEFAULT_SECTION_VALUES = [
   "dashboard",
+  "office",
   "personas",
   "tools",
   "teams",

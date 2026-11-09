@@ -9,6 +9,7 @@ mod corpus;
 mod error;
 mod github;
 mod install;
+mod office;
 mod registry;
 mod render;
 mod state;
@@ -109,6 +110,8 @@ pub fn run() {
         })
         .setup(|app| {
             state::initialize(app)?;
+            // Office — live task bookkeeping for the isometric office view.
+            tauri::Manager::manage(app, office::OfficeRuntime::default());
             // Phase 15 — spawn the auto-check scheduler. The task
             // sleeps for 24h between wakes, re-reads the live settings
             // on each cycle (so a user toggling auto-check off mid-run
@@ -191,6 +194,11 @@ pub fn run() {
             install::projects_list,
             install::loadout_export,
             install::loadout_import,
+            office::office_runner_status,
+            office::office_tasks_history,
+            office::office_route,
+            office::office_task_start,
+            office::office_task_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
