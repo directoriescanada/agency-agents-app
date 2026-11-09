@@ -5,7 +5,7 @@
    * Shown once, before anything else, when the user hasn't chosen where the
    * agent catalog lives (`catalog.configured === false`). Three paths:
    *   1. Use my own clone  — detect/Find + folder picker (manage-with-permission)
-   *   2. Set one up for me  — provision ~/.agency-agents (git clone or snapshot)
+   *   2. Set one up for me  — provision ~/.oz-agency (git clone or snapshot)
    *   3. Bundled snapshot   — the always-works default
    *
    * Posture: nothing is written until the user picks. Choosing any option
@@ -79,7 +79,7 @@
                       <div class="cand-main">
                         <span class="cand-path">{c.path}</span>
                         <span class="cand-meta">
-                          {i18n.count(c.agentCount, "common.agent.one", "common.agent.many")}{c.hasGit ? " · git" : ""} · {c.kind === "managed" ? "~/.agency-agents" : i18n.t("common.detected")}
+                          {i18n.count(c.agentCount, "common.agent.one", "common.agent.many")}{c.hasGit ? " · git" : ""} · {c.kind === "managed" ? "~/.oz-agency" : i18n.t("common.detected")}
                         </span>
                       </div>
                       <Check size={15} />

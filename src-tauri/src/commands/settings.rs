@@ -1,7 +1,7 @@
 //! Settings persistence (Phase 12d).
 //!
 //! Stores user-configurable preferences in
-//! `~/Library/Application Support/com.zerologic.agency-agents-app/settings.json`. Loaded once
+//! `~/Library/Application Support/com.ozagency.app/settings.json`. Loaded once
 //! at app startup into `AppState.settings` and refreshed by every
 //! `settings_set` / `settings_reset` call so live readers (e.g. the
 //! paranoid-mode gate consulted by `require_network`) see changes

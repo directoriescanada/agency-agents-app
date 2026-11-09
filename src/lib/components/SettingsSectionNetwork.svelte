@@ -18,7 +18,6 @@
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
 
   import { settings } from "$lib/stores/settings.svelte";
-  import SettingsSectionUpdates from "$lib/components/SettingsSectionUpdates.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   const offlineModeDescription = $derived(i18n.t("network.offlineDescription"));
@@ -51,11 +50,9 @@
         desc: i18n.t("network.githubAssetsDesc"),
         allowed: !paranoid,
       },
-      {
-        label: "agencyagents.app",
-        desc: i18n.t("network.updaterDesc"),
-        allowed: !paranoid,
-      },
+      // Oz Agency fork: the upstream updater host (agencyagents.app) is not
+      // contacted — no update channel is configured (tauri.conf.json
+      // plugins.updater.endpoints is empty). Re-add a row here when one is.
       {
         label: i18n.t("network.defaultBrowser"),
         desc: i18n.t("network.browserDesc"),
@@ -125,7 +122,8 @@
 
     {#if settings.error}<p class="callout-error">{settings.error}</p>{/if}
 
-    <SettingsSectionUpdates />
+    <!-- Oz Agency fork: the Updates subsection (SettingsSectionUpdates) is
+         hidden until this fork publishes its own update channel. -->
   {/if}
 </div>
 

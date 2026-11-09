@@ -17,7 +17,7 @@ export type CaskIconMode = "off" | "installed-only" | "all";
 
 /**
  * Persisted user settings (Phase 12d). Lives at
- * `~/Library/Application Support/com.zerologic.agency-agents-app/settings.json` and is
+ * `~/Library/Application Support/com.ozagency.app/settings.json` and is
  * round-tripped via `settingsGet` / `settingsSet`.
  *
  * Bounds (enforced server-side, also re-checked client-side for snappier

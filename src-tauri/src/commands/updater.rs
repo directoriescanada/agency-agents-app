@@ -181,6 +181,19 @@ impl<R: tauri::Runtime> PluginBackend<R> {
 #[async_trait::async_trait]
 impl<R: tauri::Runtime> UpdaterBackend for PluginBackend<R> {
     async fn check(&self) -> Result<Option<CachedUpdate>, AppError> {
+        // Oz Agency fork: no update channel is published yet, so
+        // `plugins.updater.endpoints` in tauri.conf.json is empty. Report
+        // "up to date" instead of asking the plugin, which would fail on an
+        // empty endpoint list — and must never fall back to the upstream
+        // manifest, whose builds would replace this app with the original.
+        // Restore by adding an endpoint + this fork's own signing pubkey.
+        if self.app.config().plugins.0.get("updater").map_or(true, |u| {
+            u.get("endpoints")
+                .and_then(|e| e.as_array())
+                .map_or(true, |a| a.is_empty())
+        }) {
+            return Ok(None);
+        }
         let updater = self.updater()?;
         let opt = updater
             .check()

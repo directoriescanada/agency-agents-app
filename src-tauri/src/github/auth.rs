@@ -60,7 +60,7 @@ use crate::error::AppError;
 /// one-click re-sign-in on their next GitHub action.
 ///
 /// The match is enforced by `tests::service_id_matches_tauri_conf`.
-pub const KEYCHAIN_SERVICE: &str = "com.zerologic.agency-agents-app";
+pub const KEYCHAIN_SERVICE: &str = "com.ozagency.app";
 
 /// Keychain account name for the access token. Keep this stable across
 /// versions — a rename would orphan tokens already in users' Keychains.
@@ -690,7 +690,7 @@ fn build_oauth_client() -> Result<reqwest::Client, AppError> {
         .user_agent(concat!(
             "agency-agents-app/",
             env!("CARGO_PKG_VERSION"),
-            " (+https://github.com/msitarzewski/agency-agents-app)"
+            " (+https://github.com/directoriescanada/agency-agents-app)"
         ))
         .build()
         .map_err(|e| AppError::Network {
@@ -1123,9 +1123,9 @@ mod tests {
     fn keychain_constants_are_stable() {
         // Renaming these silently orphans tokens in users' Keychains.
         // Any change here needs an explicit migration plan.
-        // Renamed source-app service ID → com.zerologic.agency-agents-app
+        // Renamed source-app service ID → com.ozagency.app
         // on the 2026-06-05 rebrand fork; matches tauri.conf.json identifier.
-        assert_eq!(KEYCHAIN_SERVICE, "com.zerologic.agency-agents-app");
+        assert_eq!(KEYCHAIN_SERVICE, "com.ozagency.app");
         assert_eq!(KEYCHAIN_ACCOUNT_TOKEN, "github_access_token");
         assert_eq!(KEYCHAIN_ACCOUNT_SCOPES, "github_access_token_scopes");
         assert_eq!(KEYCHAIN_ACCOUNT_USERNAME, "github_username");

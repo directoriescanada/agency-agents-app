@@ -16,8 +16,8 @@
   import { safeOpenUrl } from "$lib/util/url";
   import { i18n } from "$lib/stores/i18n.svelte";
 
-  const REPO_URL = "https://github.com/msitarzewski/agency-agents-app";
-  const CATALOG_URL = "https://github.com/msitarzewski/agency-agents";
+  const REPO_URL = "https://github.com/directoriescanada/agency-agents-app";
+  const CATALOG_URL = "https://github.com/directoriescanada/agency-agents";
 
   let version = $state<string | null>(null);
   let versionError = $state<string | null>(null);
@@ -47,7 +47,7 @@
       <dt>{i18n.t("settings.about.app")}</dt>
       <dd>
         <button class="link" type="button" onclick={() => void safeOpenUrl(REPO_URL)}>
-          <code>github.com/msitarzewski/agency-agents-app</code>
+          <code>github.com/directoriescanada/agency-agents-app</code>
           <ExternalLink size={12} />
         </button>
       </dd>
@@ -56,7 +56,7 @@
       <dt>{i18n.t("settings.about.catalog")}</dt>
       <dd>
         <button class="link" type="button" onclick={() => void safeOpenUrl(CATALOG_URL)}>
-          <code>github.com/msitarzewski/agency-agents</code>
+          <code>github.com/directoriescanada/agency-agents</code>
           <ExternalLink size={12} />
         </button>
       </dd>

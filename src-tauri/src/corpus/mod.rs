@@ -15,7 +15,7 @@
 //!   (`resources/corpus-baseline/<category>/<slug>.md`). On first run it is
 //!   copied to `<app_data_dir>/corpus/` so the app works offline.
 //! - **Refresh** ([`corpus_refresh`]): fetch the GitHub tarball
-//!   `https://codeload.github.com/msitarzewski/agency-agents/tar.gz/refs/heads/main`,
+//!   `https://codeload.github.com/directoriescanada/agency-agents/tar.gz/refs/heads/main`,
 //!   extract the category dirs over the working copy, and rebuild
 //!   `corpus-index.json`. No runtime git dependency.
 //!
@@ -107,10 +107,10 @@ fn parse_agent_dirs(script: &str) -> Option<Vec<String>> {
 /// GitHub `codeload` tarball for the live corpus. Streamed, gunzipped,
 /// and unpacked on [`corpus_refresh`]. No git binary required.
 const CORPUS_TARBALL_URL: &str =
-    "https://codeload.github.com/msitarzewski/agency-agents/tar.gz/refs/heads/main";
+    "https://codeload.github.com/directoriescanada/agency-agents/tar.gz/refs/heads/main";
 
 /// Git remote used to clone/pull a managed catalog when `git` is available.
-const CATALOG_GIT_URL: &str = "https://github.com/msitarzewski/agency-agents.git";
+const CATALOG_GIT_URL: &str = "https://github.com/directoriescanada/agency-agents.git";
 
 /// Dev-root directory names scanned (under `$HOME`) by the "Find Agency Agents"
 /// button when looking for an existing clone.
@@ -125,7 +125,7 @@ const SCAN_ROOTS: [&str; 7] = [
 ];
 
 /// User-Agent for the refresh fetch. Mirrors the catalog refresh style.
-const USER_AGENT: &str = "agency-agents/0.1 (+https://github.com/msitarzewski/agency-agents)";
+const USER_AGENT: &str = "agency-agents/0.1 (+https://github.com/directoriescanada/agency-agents)";
 
 /// Whole-request timeout for the tarball fetch. The repo is small (a few
 /// hundred small markdown files) so 60s is generous.
@@ -1095,10 +1095,10 @@ async fn read_capped(path: &Path, max: u64) -> Result<Vec<u8>, AppError> {
 // Catalog detection / provisioning / pull (#1 clone-as-source-of-truth)
 // =====================================================================
 
-/// `~/.agency-agents` — the default managed-catalog location (shared with the
-/// agency-agents CLI).
+/// `~/.oz-agency` — the default managed-catalog location (kept separate from the
+/// upstream app's `~/.agency-agents`).
 fn home_agency_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".agency-agents"))
+    dirs::home_dir().map(|h| h.join(".oz-agency"))
 }
 
 /// Is a `git` binary on PATH? Determines clone/pull vs tarball-snapshot.
@@ -1312,7 +1312,7 @@ fn baseline_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
 }
 
 /// Resolve the per-app data dir via Tauri's path resolver (honors the
-/// bundle id `com.zerologic.agency-agents-app`).
+/// bundle id `com.ozagency.app`).
 pub(crate) fn app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
     app.path().app_data_dir().map_err(|e| AppError::Internal {
         message: format!("resolve app_data_dir: {e}"),
