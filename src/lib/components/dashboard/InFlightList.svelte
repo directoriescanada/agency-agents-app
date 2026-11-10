@@ -1,15 +1,17 @@
 <script lang="ts">
   /**
    * Tasks running right now: who, for which department, on what, for how
-   * long, with a Stop on each. The one dashboard widget that reads the
+   * long, with a Stop on each. A team task is one row under its lead, with
+   * the phase it is in; stopping it stops every part. The one dashboard widget that reads the
    * per-second clock, so only its timers re-render every second.
    */
   import Square from "@lucide/svelte/icons/square";
   import { corpus } from "$lib/stores/corpus.svelte";
   import { office } from "$lib/stores/office.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
-  import { formatElapsed } from "$lib/office/format";
+  import { formatElapsed, phaseLine, teamLabel } from "$lib/office/format";
   import Button from "../Button.svelte";
+  import Pill from "../Pill.svelte";
 
   interface Props {
     /** Open a task where its live output can be read. */
@@ -19,7 +21,7 @@
 
   const emojiOf = $derived(new Map(corpus.agents.map((a) => [a.slug, a.emoji])));
   /** Longest-running first: the one most likely to need a look. */
-  const running = $derived(office.running.slice().sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)));
+  const running = $derived(office.runningTop.slice().sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)));
 </script>
 
 {#if running.length === 0}
@@ -28,16 +30,18 @@
   <ul class="list">
     {#each running as t (t.id)}
       {@const tool = t.toolsUsed.at(-1)}
+      {@const phase = phaseLine(t, office.childrenOf(t.id))}
       <li class="item">
         <button class="open" onclick={() => onOpen(t.id)} title={i18n.t("dashboard.ops.openTask")}>
           <span class="live" aria-hidden="true"></span>
           <span class="text">
             <span class="who">
               <span class="agent">{emojiOf.get(t.agentSlug) ? `${emojiOf.get(t.agentSlug)} ` : ""}{t.agentName}</span>
+              {#if t.kind === "team"}<Pill tone="brand">{teamLabel(t)}</Pill>{/if}
               <span class="dept"><span class="dot" style="background:{corpus.colorOf(t.department)}"></span>{corpus.labelOf(t.department)}</span>
             </span>
             <span class="prompt">{t.prompt}</span>
-            {#if tool}<span class="tool">{i18n.t("dashboard.ops.usingTool", { tool })}</span>{/if}
+            {#if phase}<span class="tool">{phase}</span>{:else if tool}<span class="tool">{i18n.t("dashboard.ops.usingTool", { tool })}</span>{/if}
           </span>
           <span class="timer">{formatElapsed(t, office.now)}</span>
         </button>
@@ -70,7 +74,7 @@
   @media (prefers-reduced-motion: reduce) { .live { animation: none; } }
 
   .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .who { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+  .who { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
   .agent { font-size: var(--text-body); font-weight: var(--fw-semibold); color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dept { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-caption); color: var(--color-text-muted); }
   .dot { width: 7px; height: 7px; border-radius: var(--radius-full); flex: none; }

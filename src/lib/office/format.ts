@@ -45,6 +45,24 @@ export function statusLabel(t: OfficeTask): string {
   return i18n.t(`office.status.${t.status}` as Parameters<typeof i18n.t>[0]);
 }
 
+/** "Team · 3" once the lead has named the members, "Team" before that. */
+export function teamLabel(t: OfficeTask): string {
+  const n = t.members?.length ?? 0;
+  return n > 0 ? i18n.t("office.teamPill", { count: n }) : i18n.t("office.mode.team");
+}
+
+/**
+ * What a team task is doing right now: "Members at work · 1 of 3 parts in".
+ * `null` for anything that is not a team task with a phase.
+ */
+export function phaseLine(t: OfficeTask, parts: readonly OfficeTask[]): string | null {
+  if (t.kind !== "team" || !t.phase) return null;
+  const label = i18n.t(`office.phase.${t.phase}` as Parameters<typeof i18n.t>[0]);
+  if (t.phase !== "working" || parts.length === 0) return label;
+  const done = parts.filter((p) => p.status === "done").length;
+  return `${label} · ${i18n.t("office.partsIn", { done, total: parts.length })}`;
+}
+
 /** Clock time for today, short date otherwise. */
 export function formatWhen(ms: number, nowMs: number): string {
   const d = new Date(ms);

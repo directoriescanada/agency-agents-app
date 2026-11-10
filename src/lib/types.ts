@@ -617,6 +617,15 @@ export type SidebarSection =
 
 export type OfficeTaskStatus = "running" | "done" | "error" | "cancelled";
 
+/**
+ * What a task record stands for: one agent's own task, a team task (held by
+ * its lead), or one member's part of a team task.
+ */
+export type OfficeTaskKind = "solo" | "team" | "part";
+
+/** Where a team task is: the lead plans, members work, the lead merges. */
+export type OfficeTeamPhase = "planning" | "working" | "merging" | "done";
+
 /** One office task. Mirrors `office::TaskRecord`. */
 export interface OfficeTask {
   id: string;
@@ -636,6 +645,16 @@ export interface OfficeTask {
   durationMs?: number;
   numTurns?: number;
   error?: string;
+  /** Absent on records written before team tasks existed: read as "solo". */
+  kind?: OfficeTaskKind;
+  /** On a part: the team task it belongs to. */
+  parentId?: string;
+  /** On a team task: its current phase. */
+  phase?: OfficeTeamPhase;
+  /** On a team task: the members' slugs, in the order the lead named them. */
+  members?: string[];
+  /** On a part: what the lead asked this member to do. */
+  brief?: string;
 }
 
 /** `office:task` event payload. Mirrors `office::TaskEvent`. */
@@ -643,6 +662,7 @@ export type OfficeTaskEvent =
   | { kind: "started"; task: OfficeTask }
   | { kind: "delta"; taskId: string; text: string }
   | { kind: "tool"; taskId: string; tool: string }
+  | { kind: "phase"; taskId: string; phase: OfficeTeamPhase; members: string[] }
   | { kind: "finished"; task: OfficeTask };
 
 /** Mirrors `office::RunnerStatus`. */

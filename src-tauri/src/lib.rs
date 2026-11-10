@@ -199,6 +199,7 @@ pub fn run() {
             office::office_route,
             office::office_task_start,
             office::office_task_cancel,
+            office::team::office_team_start,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -67,11 +67,11 @@
   const minuteNow = $derived(Math.floor(office.now / 60_000) * 60_000);
   const weekStart = $derived(daysAgo(minuteNow, 6));
 
-  const recent = $derived(recentFinished(office.tasks, 8));
+  const recent = $derived(recentFinished(office.top, 8));
   const activity = $derived(dailySeries(office.tasks, 14, minuteNow));
   const topAgents = $derived(perAgent(office.tasks, weekStart).slice(0, 5));
   const departmentBars = $derived<BarItem[]>(
-    perDepartment(office.tasks, weekStart)
+    perDepartment(office.top, weekStart)
       .slice(0, 6)
       .map((d) => ({
         key: d.slug,
@@ -132,7 +132,7 @@
   {:else if office.historyLoaded}
     <div class="ops">
       <div class="col">
-        <DashCard title={i18n.t("dashboard.ops.inFlight")} sub={office.running.length > 0 ? String(office.running.length) : undefined}>
+        <DashCard title={i18n.t("dashboard.ops.inFlight")} sub={office.runningTop.length > 0 ? String(office.runningTop.length) : undefined}>
           <InFlightList onOpen={openTask} />
         </DashCard>
         <DashCard title={i18n.t("dashboard.ops.recent")}>

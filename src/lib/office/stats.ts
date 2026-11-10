@@ -23,6 +23,19 @@ export function daysAgo(ms: number, days: number): number {
   return d.getTime();
 }
 
+/**
+ * Tasks as the user handed them out. A team task is one task: its parts are
+ * left out here, unless the team task itself is not in the list (the app was
+ * closed mid-run), in which case a part stands on its own.
+ *
+ * Counts of tasks use this; cost sums and per-agent figures use every record,
+ * since each part is real work with its own cost.
+ */
+export function topLevel(tasks: readonly OfficeTask[]): OfficeTask[] {
+  const ids = new Set(tasks.map((t) => t.id));
+  return tasks.filter((t) => !(t.kind === "part" && t.parentId != null && ids.has(t.parentId)));
+}
+
 const startedMs = (t: OfficeTask): number => Date.parse(t.startedAt);
 const finishedMs = (t: OfficeTask): number | null => (t.finishedAt ? Date.parse(t.finishedAt) : null);
 
@@ -123,8 +136,9 @@ export function dailySeries(tasks: readonly OfficeTask[], days: number, nowMs: n
   const points: DayPoint[] = [];
   for (let i = days - 1; i >= 0; i--) points.push({ dayMs: daysAgo(nowMs, i), tasks: 0, spend: 0 });
   const index = new Map(points.map((p, i) => [p.dayMs, i]));
+  const own = new Set(topLevel(tasks));
   for (const t of tasks) {
-    const s = index.get(startOfDay(startedMs(t)));
+    const s = own.has(t) ? index.get(startOfDay(startedMs(t))) : undefined;
     if (s != null) points[s].tasks += 1;
     if (t.costUsd != null) {
       const f = index.get(startOfDay(finishedMs(t) ?? startedMs(t)));

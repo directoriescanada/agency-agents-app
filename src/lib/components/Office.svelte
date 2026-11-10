@@ -16,9 +16,18 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import { ui } from "$lib/stores/ui.svelte";
   import { AGENCY_NAME } from "$lib/util/brand";
-  import type { Agent, OfficeTask } from "$lib/types";
+  import type { Agent, OfficeTask, OfficeTeamPhase } from "$lib/types";
+  import type { MessageKey } from "$lib/i18n/messages";
   import { buildDepartments, LOBBY_SLUG } from "$lib/office/scene";
-  import { formatCost, formatElapsed, revealDeliverable, statusLabel, statusTone } from "$lib/office/format";
+  import {
+    formatCost,
+    formatElapsed,
+    phaseLine,
+    revealDeliverable,
+    statusLabel,
+    statusTone,
+    teamLabel,
+  } from "$lib/office/format";
 
   import OfficeCanvas from "./OfficeCanvas.svelte";
   import OfficeComposer from "./OfficeComposer.svelte";
@@ -33,6 +42,7 @@
   import ChevronLeft from "@lucide/svelte/icons/chevron-left";
   import Wrench from "@lucide/svelte/icons/wrench";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
+  import Check from "@lucide/svelte/icons/check";
 
   let canvasRef: OfficeCanvas | undefined = $state();
 
@@ -61,6 +71,8 @@
     if (a) {
       office.composerDepartment = a.category;
       office.composerAgent = a.slug;
+      // In team mode the desk you click is the lead.
+      office.composerLead = a.slug;
     }
   }
   function pickPod(slug: string) {
@@ -71,6 +83,7 @@
     if (slug === LOBBY_SLUG) return;
     office.composerDepartment = slug;
     office.composerAgent = null;
+    office.composerLead = null;
   }
   function pickNothing() {
     office.selectedAgent = null;
@@ -79,6 +92,20 @@
 
   function emojiOf(slug: string): string {
     return corpus.agents.find((a) => a.slug === slug)?.emoji ?? "";
+  }
+
+  // ---------- Team tasks ----------
+  /** The steps of a team task, in order. */
+  const STEPS: readonly OfficeTeamPhase[] = ["planning", "working", "merging"];
+  /** How far a team task has got: the step it is on, or past the last one when merged. */
+  function stepOf(t: OfficeTask): number {
+    const i = STEPS.indexOf(t.phase ?? "planning");
+    return i < 0 ? STEPS.length : i;
+  }
+  /** What a team task spent in all, lead and parts together. */
+  function teamCost(t: OfficeTask): string | null {
+    const amount = formatCost(office.totalCost(t));
+    return amount ? i18n.t("office.teamCost", { amount }) : null;
   }
 </script>
 
@@ -132,29 +159,94 @@
     <!-- Detail or feed -->
     {#if selectedTask}
       {@const t = selectedTask}
+      {@const team = t.kind === "team"}
+      {@const lead = office.parentOf(t)}
+      {@const parts = team ? office.childrenOf(t.id) : []}
+      {@const at = stepOf(t)}
       <section class="detail">
-        <button class="back" onclick={() => (office.selectedTask = null)}><ChevronLeft size={14} /> {i18n.t("office.backToFeed")}</button>
+        {#if lead}
+          <button class="back" onclick={() => (office.selectedTask = lead.id)}><ChevronLeft size={14} /> {i18n.t("office.backToTeam")}</button>
+        {:else}
+          <button class="back" onclick={() => (office.selectedTask = null)}><ChevronLeft size={14} /> {i18n.t("office.backToFeed")}</button>
+        {/if}
         <header class="detail-head">
           <div class="who">{emojiOf(t.agentSlug)} <strong>{t.agentName}</strong> <span class="muted">· {corpus.labelOf(t.department)}</span></div>
           <div class="meta">
+            {#if team}<Pill tone="brand">{teamLabel(t)}</Pill>{/if}
             <Pill tone={statusTone(t)}>{statusLabel(t)}</Pill>
             <span class="muted">{formatElapsed(t, office.now)}</span>
-            {#if t.numTurns != null}<span class="muted">· {i18n.t("office.turns", { count: t.numTurns })}</span>{/if}
-            {#if formatCost(t.costUsd)}<span class="muted">· {formatCost(t.costUsd)}</span>{/if}
+            {#if team}
+              {#if teamCost(t)}<span class="muted">· {teamCost(t)}</span>{/if}
+            {:else}
+              {#if t.numTurns != null}<span class="muted">· {i18n.count(t.numTurns, "office.turn.one", "office.turn.many")}</span>{/if}
+              {#if formatCost(t.costUsd)}<span class="muted">· {formatCost(t.costUsd)}</span>{/if}
+            {/if}
           </div>
         </header>
-        <p class="prompt">{t.prompt}</p>
+        {#if lead}
+          <p class="partof">{i18n.t("office.partOf", { lead: lead.agentName })}</p>
+        {/if}
+        {#if t.brief}
+          <div class="brief">
+            <span class="brief-label">{i18n.t("office.brief")}</span>
+            <p>{t.brief}</p>
+          </div>
+          <p class="prompt whole">{t.prompt}</p>
+        {:else}
+          <p class="prompt">{t.prompt}</p>
+        {/if}
+        {#if team}
+          <ol class="steps" aria-label={i18n.t("office.steps")}>
+            {#each STEPS as step, i (step)}
+              <li
+                class="step"
+                class:done={at > i}
+                class:active={at === i && t.status === "running"}
+                class:halted={at === i && t.status !== "running"}
+                aria-current={at === i ? "step" : undefined}
+              >
+                <span class="step-dot">{#if at > i}<Check size={11} strokeWidth={3} />{:else}{i + 1}{/if}</span>
+                <span class="step-name">{i18n.t(`office.step.${step}` as MessageKey)}</span>
+              </li>
+            {/each}
+          </ol>
+          {#if parts.length > 0}
+            <h3 class="sub">
+              {i18n.t("office.parts")}
+              <span class="tally">{i18n.t("office.partsIn", { done: parts.filter((p) => p.status === "done").length, total: parts.length })}</span>
+            </h3>
+            <ul class="feed">
+              {#each parts as p (p.id)}
+                <li><button class="feed-item" onclick={() => (office.selectedTask = p.id)}>
+                  <span class="fi-top">
+                    <span class="fi-who">{emojiOf(p.agentSlug)} {p.agentName}</span>
+                    <Pill tone={statusTone(p)}>{statusLabel(p)}</Pill>
+                  </span>
+                  <span class="fi-prompt">{p.brief ?? p.prompt}</span>
+                  <span class="fi-meta muted">{formatElapsed(p, office.now)}{formatCost(p.costUsd) ? ` · ${formatCost(p.costUsd)}` : ""}</span>
+                </button></li>
+              {/each}
+            </ul>
+          {:else if t.status === "running"}
+            <p class="muted empty">{i18n.t("office.planning")}</p>
+          {/if}
+        {/if}
         {#if t.toolsUsed.length > 0}
           <div class="tools"><Wrench size={12} /> {t.toolsUsed.join(", ")}</div>
         {/if}
-        <div class="output" class:streaming={t.status === "running"}>
-          {#if t.output}
-            <pre>{t.output}</pre>
-          {:else if t.status === "running"}
-            <span class="muted">{i18n.t("office.thinking")}</span>
-          {/if}
-          {#if t.error}<p class="err">{t.error}</p>{/if}
-        </div>
+        {#if !team || t.output || t.phase === "merging" || t.phase === "done"}
+          {#if team}<h3 class="sub">{i18n.t("office.merged")}</h3>{/if}
+          <div class="output" class:merged={team} class:streaming={t.status === "running"}>
+            {#if t.output}
+              <pre>{t.output}</pre>
+            {:else if t.status === "running"}
+              <span class="muted">{i18n.t("office.thinking")}</span>
+            {/if}
+            {#if t.error}<p class="err">{t.error}</p>{/if}
+          </div>
+        {:else if t.error}
+          <p class="err">{t.error}</p>
+        {/if}
         <div class="actions">
           {#if t.status === "running"}
             <Button variant="danger" size="sm" onclick={() => office.cancel(t.id)}>
@@ -163,7 +255,10 @@
             </Button>
           {/if}
           {#if t.deliverablePath}
-            <Button variant="secondary" size="sm" onclick={() => revealDeliverable(t.deliverablePath!)}><FolderOpen size={12} /> {i18n.t("office.reveal")}</Button>
+            <Button variant="secondary" size="sm" onclick={() => revealDeliverable(t.deliverablePath!)}>
+              {#snippet icon()}<FolderOpen size={12} />{/snippet}
+              {i18n.t("office.reveal")}
+            </Button>
           {/if}
         </div>
       </section>
@@ -197,19 +292,26 @@
       </section>
     {:else}
       <section class="feedwrap">
-        <h3 class="sub">{i18n.t("office.feed")} {#if office.running.length}<span class="live">{i18n.t("office.live", { count: office.running.length })}</span>{/if}</h3>
+        <h3 class="sub">{i18n.t("office.feed")} {#if office.runningTop.length}<span class="live">{i18n.t("office.live", { count: office.runningTop.length })}</span>{/if}</h3>
         {#if office.feed.length === 0}
           <p class="muted empty">{i18n.t("office.feedEmpty")}</p>
         {:else}
           <ul class="feed">
             {#each office.feed as t (t.id)}
+              {@const phase = t.status === "running" ? phaseLine(t, office.childrenOf(t.id)) : null}
               <li><button class="feed-item" onclick={() => (office.selectedTask = t.id)}>
                 <span class="fi-top">
                   <span class="fi-who">{emojiOf(t.agentSlug)} {t.agentName}</span>
-                  <Pill tone={statusTone(t)}>{statusLabel(t)}</Pill>
+                  <span class="fi-pills">
+                    {#if t.kind === "team"}<Pill tone="brand">{teamLabel(t)}</Pill>{/if}
+                    <Pill tone={statusTone(t)}>{statusLabel(t)}</Pill>
+                  </span>
                 </span>
                 <span class="fi-prompt">{t.prompt}</span>
-                <span class="fi-meta muted">{corpus.labelOf(t.department)} · {formatElapsed(t, office.now)}{#if t.toolsUsed.length} · {t.toolsUsed.length} {i18n.t("office.toolsShort")}{/if}</span>
+                {#if phase}
+                  <span class="fi-meta fi-phase">{phase}</span>
+                {/if}
+                <span class="fi-meta muted">{corpus.labelOf(t.department)} · {formatElapsed(t, office.now)}{t.kind !== "team" && t.toolsUsed.length ? ` · ${t.toolsUsed.length} ${i18n.t("office.toolsShort")}` : ""}</span>
               </button></li>
             {/each}
           </ul>
@@ -358,7 +460,10 @@
   .fi-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; }
   .fi-who { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .fi-prompt { font-size: 12.5px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .fi-pills { display: inline-flex; align-items: center; gap: 4px; flex: none; }
   .fi-meta { font-size: 11px; }
+  .fi-phase { color: var(--color-info-on-subtle, var(--color-info)); font-weight: var(--fw-medium); }
+  .tally { font-weight: var(--fw-medium); text-transform: none; letter-spacing: 0; }
   .muted { color: var(--color-text-muted); }
   .empty { font-size: 12.5px; line-height: 1.45; }
 
@@ -388,6 +493,51 @@
     padding: 1px 8px;
   }
   .prompt { margin: 0; font-size: 12.5px; line-height: 1.45; white-space: pre-wrap; color: var(--color-text-secondary); }
+  .prompt.whole { font-size: 11.5px; color: var(--color-text-muted); display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .partof { margin: 0; font-size: 11.5px; color: var(--color-text-muted); }
+  .brief {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    border-left: 3px solid var(--color-brand);
+    border-radius: 0 8px 8px 0;
+    background: var(--color-brand-subtle);
+  }
+  .brief-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-text-muted); }
+  .brief p { margin: 0; font-size: 12.5px; line-height: 1.45; white-space: pre-wrap; }
+
+  /* Plan → Work → Merge */
+  .steps { list-style: none; margin: 2px 0; padding: 0; display: flex; align-items: center; gap: 6px; }
+  .step { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--color-text-muted); flex: none; }
+  .step + .step::before { content: ""; width: 22px; height: 2px; border-radius: 1px; background: var(--color-border-strong); }
+  .step.done + .step::before { background: var(--color-success); }
+  .step-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    flex: none;
+    font-size: 10px;
+    font-weight: 700;
+    border: 1.5px solid var(--color-border-strong);
+    color: var(--color-text-muted);
+    background: var(--color-surface);
+  }
+  .step.done { color: var(--color-text-secondary); }
+  .step.done .step-dot { border-color: var(--color-success); background: var(--color-success); color: var(--color-text-inverse); }
+  .step.active { color: var(--color-text-primary); font-weight: 600; }
+  .step.active .step-dot { border-color: var(--color-info); background: var(--color-info); color: var(--color-text-inverse); animation: step-pulse 1.6s ease-in-out infinite; }
+  .step.halted { color: var(--color-danger); font-weight: 600; }
+  .step.halted .step-dot { border-color: var(--color-danger); color: var(--color-danger); }
+  @keyframes step-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-info) 45%, transparent); }
+    50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-info) 0%, transparent); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .step.active .step-dot { animation: none; }
+  }
   .vibe { margin: 0; font-size: 12.5px; font-style: italic; color: var(--color-text-secondary); }
   .desc { margin: 0; font-size: 12.5px; line-height: 1.45; }
   .tools { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-muted); }
@@ -401,6 +551,8 @@
     overflow: auto;
     font-size: 12.5px;
   }
+  /* A merged team deliverable sits under the parts list: keep it readable. */
+  .output.merged { min-height: 220px; }
   .output.streaming { border-color: rgb(120 200 255 / 0.6); }
   .output pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; line-height: 1.45; }
   .err { margin: 0; font-size: 12px; color: var(--color-danger); white-space: pre-wrap; }

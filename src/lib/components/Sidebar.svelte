@@ -53,7 +53,7 @@
 
   function badge(id: SidebarSection): string | null {
     if (id === "office") {
-      const n = office.running.length;
+      const n = office.runningTop.length;
       return n > 0 ? String(n) : null;
     }
     if (id === "personas") {

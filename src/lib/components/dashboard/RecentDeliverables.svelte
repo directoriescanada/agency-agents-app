@@ -7,8 +7,9 @@
   import FolderOpen from "@lucide/svelte/icons/folder-open";
   import { corpus } from "$lib/stores/corpus.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
+  import { office } from "$lib/stores/office.svelte";
   import { durationMs } from "$lib/office/stats";
-  import { formatCost, formatDuration, formatWhen, revealDeliverable, statusLabel, statusTone } from "$lib/office/format";
+  import { formatCost, formatDuration, formatWhen, revealDeliverable, statusLabel, statusTone, teamLabel } from "$lib/office/format";
   import type { OfficeTask } from "$lib/types";
   import Pill from "../Pill.svelte";
 
@@ -22,10 +23,14 @@
 
   const emojiOf = $derived(new Map(corpus.agents.map((a) => [a.slug, a.emoji])));
 
-  /** "Engineering · 14s · $0.19", leaving out what the runner did not report. */
+  /**
+   * "Engineering · 14s · $0.19", leaving out what the runner did not report.
+   * A team task's cost is the whole team's: the lead's plan and merge plus
+   * every part.
+   */
   function meta(t: OfficeTask): string {
     const ms = durationMs(t);
-    return [corpus.labelOf(t.department), ms == null ? null : formatDuration(ms), formatCost(t.costUsd)]
+    return [corpus.labelOf(t.department), ms == null ? null : formatDuration(ms), formatCost(office.totalCost(t))]
       .filter((x) => x)
       .join(" · ");
   }
@@ -42,6 +47,7 @@
           <span class="top">
             <Pill tone={statusTone(t)}>{statusLabel(t)}</Pill>
             <span class="agent">{emojiOf.get(t.agentSlug) ? `${emojiOf.get(t.agentSlug)} ` : ""}{t.agentName}</span>
+            {#if t.kind === "team"}<Pill tone="brand">{teamLabel(t)}</Pill>{/if}
             <span class="when">{whenOf(t)}</span>
           </span>
           <span class="prompt">{t.prompt}</span>
@@ -73,8 +79,8 @@
   .open:focus-visible { outline: none; box-shadow: var(--shadow-focus-ring); }
 
   .top { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-  .agent { flex: 1; min-width: 0; font-size: var(--text-body); font-weight: var(--fw-semibold); color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .when { flex: none; font-size: var(--text-caption); color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+  .agent { flex: 0 1 auto; min-width: 0; font-size: var(--text-body); font-weight: var(--fw-semibold); color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .when { flex: none; margin-left: auto; font-size: var(--text-caption); color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
   .prompt { font-size: var(--text-body-sm); color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .meta { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-caption); color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
   .dot { width: 7px; height: 7px; border-radius: var(--radius-full); flex: none; }

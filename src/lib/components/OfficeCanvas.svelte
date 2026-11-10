@@ -118,7 +118,8 @@
     const syncCalm = () => (sim.calm = calmQuery.matches);
     syncCalm();
     calmQuery.addEventListener("change", syncCalm);
-    const offEvents = office.subscribe((ev) => sim.onTaskEvent(ev));
+    const leadOf = (teamId: string) => office.tasks.find((t) => t.id === teamId)?.agentSlug ?? null;
+    const offEvents = office.subscribe((ev) => sim.onTaskEvent(ev, leadOf));
 
     const ro = new ResizeObserver(() => {
       const r = hostEl.getBoundingClientRect();
@@ -145,7 +146,7 @@
         const today = new Date().toDateString();
         renderer.stats = {
           running: office.running.length,
-          doneToday: office.tasks.filter((x) => x.status === "done" && x.finishedAt && new Date(x.finishedAt).toDateString() === today).length,
+          doneToday: office.top.filter((x) => x.status === "done" && x.finishedAt && new Date(x.finishedAt).toDateString() === today).length,
         };
         sim.tick(dt, {
           zoom: renderer.cam.zoom,

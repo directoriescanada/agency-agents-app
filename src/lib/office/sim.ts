@@ -237,11 +237,20 @@ export const seatOf = (d: Desk): Pt => ({ x: d.cx + 1.0, y: d.cy + 0.6 });
 const aisleOf = (d: Desk): Pt => ({ x: d.cx + 2.0, y: d.cy + 0.6 });
 /** Just outside the open front of a desk's pod, in line with its aisle. */
 const exitOf = (d: Desk): Pt => ({ x: d.cx + 2.0, y: d.pod.y + d.pod.h + 0.6 });
+/** Where the n-th visitor on one side of someone's desk stands: down the aisle on its right or its left. */
+const huddleSpot = (d: Desk, left: boolean, n: number): Pt => ({ x: left ? d.cx : d.cx + 2.0, y: d.cy + 0.3 + n * 0.6 });
+/** How many can stand down one side of a desk. */
+const HUDDLE_PER_SIDE = 3;
+const lengthOf = (route: Pt[]): number =>
+  route.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.x - route[i].x, p.y - route[i].y), 0);
 
 /** A point in the air, in tiles. */
 export interface Pt3 extends Pt {
   z: number;
 }
+
+/** The corner of a desk where paper lands and leaves from. */
+const trayOf = (d: Desk): Pt3 => ({ x: d.cx + 1.45, y: d.cy + 1.3, z: 0.5 });
 
 // ---------- Actors and papers ----------
 
@@ -281,6 +290,8 @@ interface Stop {
   fy: number;
   /** Coffee-corner place held for the length of the trip. */
   slot?: number;
+  /** A sheet sent on its way as the stop ends: a brief, handed out at a huddle. */
+  paper?: { from: Pt3; to: Pt3 };
 }
 
 export interface Paper {
@@ -309,6 +320,8 @@ const MIN_ZOOM = 0.2;
 const COFFEE_SLOTS = 3;
 /** The longest a desk waits for its owner once a task has landed on it. */
 const RECALL_SECONDS = 5;
+/** The longest anyone takes to reach a huddle, however far away they sit. */
+const HUDDLE_WALK_SECONDS = 6;
 
 /** Walking pace in tiles per second; everyone has their own. */
 const paceOf = (d: Desk): number => 1.4 + d.phase * 0.5;
@@ -373,22 +386,85 @@ export class OfficeSim {
     }
   }
 
-  /** Keep the floor in step with the task runner. */
-  onTaskEvent(ev: OfficeTaskEvent): void {
+  /**
+   * Keep the floor in step with the task runner. `leadOf` names the agent
+   * leading a team task, by the task's id.
+   */
+  onTaskEvent(ev: OfficeTaskEvent, leadOf: (teamId: string) => string | null = () => null): void {
     const lobby = this.layout?.lobby;
     if (!lobby) return;
+    if (ev.kind === "phase") {
+      // The split is settled: the team gathers at the lead's desk to hear it.
+      if (ev.phase === "working") this.huddle(leadOf(ev.taskId), ev.members);
+      return;
+    }
     if (ev.kind !== "started" && ev.kind !== "finished") return;
     const desk = this.desks.get(ev.task.agentSlug);
     if (!desk) return;
     const b = lobbyPlan(lobby).board;
     const board: Pt3 = { x: b.x + b.w / 2, y: b.y, z: 1.25 };
-    const tray: Pt3 = { x: desk.cx + 1.45, y: desk.cy + 1.3, z: 0.5 };
+    const tray = trayOf(desk);
+    // A part comes from the lead's desk and goes back to it; everything
+    // else comes off the task board and goes back on it.
+    const leadSlug = ev.task.kind === "part" && ev.task.parentId ? leadOf(ev.task.parentId) : null;
+    const leadDesk = leadSlug ? this.desks.get(leadSlug) : undefined;
+    const source = leadDesk && leadDesk !== desk ? trayOf(leadDesk) : board;
     if (ev.kind === "started") {
-      // The brief leaves the task board for the desk; whoever is out heads back for it.
+      // Someone at the huddle is handed their brief as they leave it.
+      if (this.actors.get(ev.task.agentSlug)?.stop.kind === "huddle") return;
+      // The brief is on its way to the desk; whoever is out heads back for it.
       this.recall(ev.task.agentSlug);
-      this.fly(board, tray);
+      this.fly(source, tray);
     } else if (ev.task.status === "done") {
-      this.fly(tray, board);
+      this.fly(tray, source);
+    }
+  }
+
+  /**
+   * A team's members stand up, walk to the lead's desk for a word, and walk
+   * back with their briefs.
+   */
+  huddle(leadSlug: string | null, members: string[]): void {
+    const grid = this.grid;
+    const lead = leadSlug ? this.desks.get(leadSlug) : undefined;
+    if (this.calm || !grid || !lead) return;
+    this.recall(lead.agent.slug);
+    const seat = seatOf(lead);
+    /** Places taken to the right and to the left of the lead's desk. */
+    const taken = [0, 0];
+    for (const slug of members) {
+      const desk = this.desks.get(slug);
+      if (!desk || desk === lead) continue;
+      if (this.actors.has(slug)) {
+        // Already out and about: straight home, and the brief is sent over.
+        this.recall(slug);
+        continue;
+      }
+      // Whichever side of the lead's desk is the shorter walk, while there is room on it.
+      let best: { side: number; spot: Pt; route: Pt[]; len: number } | null = null;
+      for (const side of [0, 1]) {
+        if (taken[side] >= HUDDLE_PER_SIDE) continue;
+        const at = huddleSpot(lead, side === 1, taken[side]);
+        const way = this.routeTo(desk, lead.pod, at, grid);
+        if (!way) continue;
+        const len = lengthOf(way);
+        if (!best || len < best.len) best = { side, spot: at, route: way, len };
+      }
+      if (!best) continue;
+      taken[best.side]++;
+      const { spot, route } = best;
+      const dx = seat.x - spot.x;
+      const dy = seat.y - spot.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const a = this.depart(desk, route, {
+        kind: "huddle",
+        seconds: rand(2.5, 4),
+        fx: dx / d,
+        fy: dy / d,
+        paper: { from: trayOf(lead), to: trayOf(desk) },
+      });
+      // However far apart they sit, nobody keeps the lead waiting.
+      a.speed = Math.max(a.speed * 1.3, best.len / HUDDLE_WALK_SECONDS);
     }
   }
 
@@ -440,7 +516,10 @@ export class OfficeSim {
           a.fx = 0;
           a.fy = 1;
         }
-        if (a.timer <= 0) this.turnBack(a);
+        if (a.timer <= 0) {
+          if (a.stop.paper) this.fly(a.stop.paper.from, a.stop.paper.to);
+          this.turnBack(a);
+        }
         return;
       }
       case "out":
@@ -523,6 +602,26 @@ export class OfficeSim {
     };
     this.actors.set(a.slug, a);
     return a;
+  }
+
+  /** From a desk's chair to `spot`, a place to stand on one of `pod`'s aisles. */
+  private routeTo(desk: Desk, pod: Pod, spot: Pt, grid: WalkGrid): Pt[] | null {
+    const a = aisleOf(desk);
+    const route = [seatOf(desk), a];
+    if (desk.pod === pod) {
+      if (Math.abs(a.x - spot.x) > 0.01) {
+        // Along the walkway inside the pod's open front, then up the other aisle.
+        const walkway = pod.y + pod.h - 0.35;
+        route.push({ x: a.x, y: walkway }, { x: spot.x, y: walkway });
+      }
+    } else {
+      // Out through this pod's front, round by the corridors, in through theirs.
+      const path = findPath(grid, exitOf(desk), { x: spot.x, y: pod.y + pod.h + 0.6 });
+      if (!path) return null;
+      route.push(...path);
+    }
+    route.push(spot);
+    return route;
   }
 
   /** Pick an idle agent, preferably one on screen, and give them somewhere to go. */

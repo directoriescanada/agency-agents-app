@@ -13,6 +13,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { Agent, OfficeRouteResult, OfficeRunnerStatus, OfficeTask, OfficeTaskEvent } from "$lib/types";
 import { errorText } from "$lib/types";
+import { topLevel } from "$lib/office/stats";
 
 /** Live status of an agent at their desk, as the office draws it. */
 export type DeskStatus = "idle" | "working" | "done" | "error";
@@ -48,6 +49,15 @@ class OfficeStore {
   composerDepartment: string | null = $state(null);
   /** Agent the composer will dispatch to; `null` = pick for me. */
   composerAgent: string | null = $state(null);
+  /** One agent, or a lead who splits the task across a team. */
+  composerMode: "solo" | "team" = $state("solo");
+  /** Team mode: the lead; `null` = Claude picks. */
+  composerLead: string | null = $state(null);
+  /**
+   * Team mode: where the members come from. `null` = the lead picks 2 to 5
+   * from the department; `preset:<slug>` or `saved:<id>` = that team.
+   */
+  composerTeam: string | null = $state(null);
   draft = $state("");
 
   /** Ticks once a second so "done" poses expire and timers re-render. */
@@ -131,6 +141,8 @@ class OfficeStore {
       next[i] = { ...t, output: t.output + ev.text };
     } else if (ev.kind === "tool") {
       next[i] = { ...t, toolsUsed: t.toolsUsed.includes(ev.tool) ? t.toolsUsed : [...t.toolsUsed, ev.tool] };
+    } else if (ev.kind === "phase") {
+      next[i] = { ...t, phase: ev.phase, members: ev.members };
     }
     this.tasks = next;
   }
@@ -139,6 +151,32 @@ class OfficeStore {
   async dispatch(agentSlug: string, prompt: string, agencyName: string): Promise<OfficeTask> {
     this.error = null;
     const task = await invoke<OfficeTask>("office_task_start", { agentSlug, prompt, agencyName });
+    if (!this.tasks.some((t) => t.id === task.id)) this.tasks = [...this.tasks, task];
+    return task;
+  }
+
+  /**
+   * Hand `prompt` to a team. The lead plans the split, the members work
+   * their parts side by side, the lead merges them into one deliverable.
+   * `memberSlugs` fixes the team; when it is empty the lead picks 2 to 5
+   * from `candidateSlugs`. Resolves with the team task (the lead's record);
+   * the parts arrive as events once the plan is in.
+   */
+  async dispatchTeam(
+    leadSlug: string,
+    memberSlugs: string[],
+    candidateSlugs: string[],
+    prompt: string,
+    agencyName: string,
+  ): Promise<OfficeTask> {
+    this.error = null;
+    const task = await invoke<OfficeTask>("office_team_start", {
+      prompt,
+      leadSlug,
+      memberSlugs,
+      candidateSlugs,
+      agencyName,
+    });
     if (!this.tasks.some((t) => t.id === task.id)) this.tasks = [...this.tasks, task];
     return task;
   }
@@ -158,13 +196,60 @@ class OfficeStore {
     return this.runner?.available === true && this.runner?.loggedIn !== false;
   }
 
+  /** Every running record, parts included: who is busy at a desk. */
   get running(): OfficeTask[] {
     return this.tasks.filter((t) => t.status === "running");
   }
 
+  /**
+   * Tasks as the user handed them out: solo and team tasks. A part shows
+   * under its team task, so it is left out here (unless that team task is
+   * gone, in which case the part stands on its own).
+   */
+  top: OfficeTask[] = $derived(topLevel(this.tasks));
+
+  /** Running tasks as the user counts them: a team task is one. */
+  get runningTop(): OfficeTask[] {
+    return this.top.filter((t) => t.status === "running");
+  }
+
   /** Newest first. */
   get feed(): OfficeTask[] {
-    return this.tasks.slice().reverse();
+    return this.top.slice().reverse();
+  }
+
+  /** The parts of a team task, in the order the lead named the members. */
+  childrenOf(taskId: string): OfficeTask[] {
+    const order = this.tasks.find((t) => t.id === taskId)?.members ?? [];
+    const rank = (t: OfficeTask): number => {
+      const i = order.indexOf(t.agentSlug);
+      return i < 0 ? order.length : i;
+    };
+    return this.tasks.filter((t) => t.parentId === taskId).sort((a, b) => rank(a) - rank(b));
+  }
+
+  /** The team task a part belongs to, when it is still in the list. */
+  parentOf(task: OfficeTask): OfficeTask | null {
+    if (!task.parentId) return null;
+    return this.tasks.find((t) => t.id === task.parentId) ?? null;
+  }
+
+  /**
+   * What a task cost in all. A team task's own figure covers the lead's
+   * planning and merge; its parts carry theirs. `null` when nothing has
+   * reported a cost yet.
+   */
+  totalCost(task: OfficeTask): number | null {
+    let sum = task.costUsd ?? 0;
+    let known = task.costUsd != null;
+    if (task.kind === "team") {
+      for (const part of this.tasks) {
+        if (part.parentId !== task.id || part.costUsd == null) continue;
+        sum += part.costUsd;
+        known = true;
+      }
+    }
+    return known ? sum : null;
   }
 
   tasksFor(agentSlug: string): OfficeTask[] {

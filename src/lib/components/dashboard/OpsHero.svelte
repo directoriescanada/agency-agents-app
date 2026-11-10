@@ -41,9 +41,11 @@
     ),
   );
 
-  const working = $derived(office.running.length);
-  const today = $derived(tasksToday(office.tasks, now));
-  const done = $derived(doneToday(office.tasks, now));
+  /** Agents at a desk with something running: a team's lead and each member count. */
+  const working = $derived(new Set(office.running.map((t) => t.agentSlug)).size);
+  /** A team task is one task; its cost below still adds up every part. */
+  const today = $derived(tasksToday(office.top, now));
+  const done = $derived(doneToday(office.top, now));
   const costToday = $derived(spendBetween(office.tasks, startOfDay(now), Infinity));
   const costWeek = $derived(spendBetween(office.tasks, daysAgo(now, 6), Infinity));
 </script>
