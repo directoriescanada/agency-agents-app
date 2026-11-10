@@ -10,6 +10,7 @@
   import { safeOpenUrl } from "$lib/util/url";
   import { SPONSOR_URL } from "$lib/util/donate";
   import { i18n } from "$lib/stores/i18n.svelte";
+  import { AGENCY_NAME } from "$lib/util/brand";
   import appIcon from "$lib/assets/app-icon.png";
   import appIconDark from "$lib/assets/app-icon-dark.png";
 
@@ -67,9 +68,9 @@
       </button>
 
       <div class="hero">
-        <img class="brand-mark light" src={appIcon} alt="Oz Agency" width="80" height="80" />
+        <img class="brand-mark light" src={appIcon} alt={AGENCY_NAME} width="80" height="80" />
         <img class="brand-mark dark" src={appIconDark} alt="" aria-hidden="true" width="80" height="80" />
-        <h1 id="about-title">Oz Agency</h1>
+        <h1 id="about-title">{AGENCY_NAME}</h1>
         <p class="tagline">{i18n.t("about.tagline")}</p>
       </div>
 

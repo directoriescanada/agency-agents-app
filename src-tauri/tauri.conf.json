@@ -37,8 +37,7 @@
     "createUpdaterArtifacts": false,
     "targets": "all",
     "resources": [
-      "resources/corpus-baseline/**/*",
-      "Assets.car"
+      "resources/corpus-baseline/**/*"
     ],
     "icon": [
       "icons/32x32.png",

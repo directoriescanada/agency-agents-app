@@ -25,6 +25,7 @@ import {
   type AppErrorPayload,
 } from "$lib/types";
 import { safeOpenUrl } from "$lib/util/url";
+import { AGENCY_NAME } from "$lib/util/brand";
 
 const REPO_NEW_ISSUE_URL =
   "https://github.com/directoriescanada/agency-agents-app/issues/new";
@@ -68,7 +69,7 @@ async function getAppVersion(): Promise<string> {
 /** Build the issue body (markdown). */
 function buildBody(ctx: ReportContext, appVer: string): string {
   const lines: string[] = [
-    `**Oz Agency:** ${appVer}`,
+    `**${AGENCY_NAME}:** ${appVer}`,
   ];
   if (ctx.errorCode) lines.push(`**Error code:** \`${ctx.errorCode}\``);
   if (ctx.command) lines.push(`**Command:** \`${ctx.command}\``);
@@ -97,7 +98,7 @@ export async function openReportIssue(ctx: ReportContext): Promise<void> {
   const appVer = await getAppVersion();
 
   const params = new URLSearchParams();
-  params.set("title", `[Oz Agency] ${ctx.summary}`);
+  params.set("title", `[${AGENCY_NAME}] ${ctx.summary}`);
   params.set("body", buildBody(ctx, appVer));
   params.set("labels", "from-app");
 

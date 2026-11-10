@@ -217,9 +217,15 @@ arches. The release-time flow:
 
 ## macOS Icon Notes
 
-macOS 26 Tahoe uses the compiled `Assets.car` path for Liquid Glass icons. Do not blindly run `npm run tauri icon`; it can clobber the curated icon outputs.
+This fork ships a flat icon built from `tools/brand/icon.svg` (and `icon-dark.svg` for the About modal). Regenerate every size with:
 
-See [docs/icon/README-liquid-glass.md](./icon/README-liquid-glass.md).
+```bash
+tools/brand/build-icons.sh
+```
+
+It needs only `sips` and the Tauri CLI, no Xcode. The fork does not ship a compiled `Assets.car`, so macOS 26 Tahoe shows the icon without Liquid Glass tint or clear variants.
+
+Upstream's Liquid Glass pipeline (full Xcode, `actool`) is described in [docs/icon/README-liquid-glass.md](./icon/README-liquid-glass.md). To revive it, point it at the new SVG, restore `Assets.car` in `bundle.resources` and add `CFBundleIconName` back through `src-tauri/Info.plist`.
 
 ## Cross-Platform Notes
 

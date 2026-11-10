@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    Oz Agency app icon (dark). Same geometry as icon.svg: an espresso plate
+    with the block in the brand ambers. Used in the About modal in dark theme.
+  -->
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4A3325"/>
+      <stop offset="1" stop-color="#251912"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.10"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF8EE"/>
+      <stop offset="1" stop-color="#FDE6C8"/>
+    </linearGradient>
+    <linearGradient id="left" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F5A45E"/>
+      <stop offset="1" stop-color="#E5853E"/>
+    </linearGradient>
+    <linearGradient id="right" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#B9602A"/>
+      <stop offset="1" stop-color="#8E4418"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E88A46"/>
+      <stop offset="1" stop-color="#B95C22"/>
+    </linearGradient>
+    <linearGradient id="shadow" gradientUnits="userSpaceOnUse" x1="642" y1="737" x2="748" y2="798">
+      <stop offset="0" stop-color="#000000" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#plate)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#sheen)"/>
+
+  <path d="M512 812 L772 662 L872 720 L612 870 Z" fill="url(#shadow)"/>
+
+  <path d="M252 362 L512 512 L512 812 L252 662 Z" fill="url(#left)"/>
+  <path d="M772 362 L512 512 L512 812 L772 662 Z" fill="url(#right)"/>
+  <path d="M512 212 L772 362 L512 512 L252 362 Z" fill="url(#top)"/>
+
+  <path fill-rule="evenodd" fill="url(#ring)"
+        d="M374 362 A138 79.7 0 1 0 650 362 A138 79.7 0 1 0 374 362 Z
+           M436 362 A76 43.9 0 1 0 588 362 A76 43.9 0 1 0 436 362 Z"/>
+</svg>

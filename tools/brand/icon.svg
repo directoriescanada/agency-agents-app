@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    Oz Agency app icon (light). An isometric block, a piece of the office
+    floor, with a ring set into its top face. Pure paths, no text, so the mark
+    survives a rename. Rasterized by tools/brand/build-icons.sh.
+
+    Grid: 1024 canvas, 824 plate inset 100 (the macOS icon grid). The block is a
+    true isometric cube with a 300 px edge: top-face half-diagonals 260 x 150.
+  -->
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7B271"/>
+      <stop offset="1" stop-color="#D4722C"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFDF9"/>
+      <stop offset="1" stop-color="#FFF0DC"/>
+    </linearGradient>
+    <linearGradient id="left" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FBE0C0"/>
+      <stop offset="1" stop-color="#F2C99C"/>
+    </linearGradient>
+    <linearGradient id="right" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#74431F"/>
+      <stop offset="1" stop-color="#4F2B13"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#EE9550"/>
+      <stop offset="1" stop-color="#C9662A"/>
+    </linearGradient>
+    <linearGradient id="shadow" gradientUnits="userSpaceOnUse" x1="642" y1="737" x2="748" y2="798">
+      <stop offset="0" stop-color="#5A2A0C" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#5A2A0C" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#plate)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#sheen)"/>
+
+  <!-- shadow the block casts across the floor -->
+  <path d="M512 812 L772 662 L872 720 L612 870 Z" fill="url(#shadow)"/>
+
+  <!-- block: left, right, top -->
+  <path d="M252 362 L512 512 L512 812 L252 662 Z" fill="url(#left)"/>
+  <path d="M772 362 L512 512 L512 812 L772 662 Z" fill="url(#right)"/>
+  <path d="M512 212 L772 362 L512 512 L252 362 Z" fill="url(#top)"/>
+
+  <!-- ring on the top face: a circle in the face's plane (axes ratio √3) -->
+  <path fill-rule="evenodd" fill="url(#ring)"
+        d="M374 362 A138 79.7 0 1 0 650 362 A138 79.7 0 1 0 374 362 Z
+           M436 362 A76 43.9 0 1 0 588 362 A76 43.9 0 1 0 436 362 Z"/>
+</svg>
