@@ -359,7 +359,7 @@
   @media (prefers-reduced-motion: reduce) {
     .titlebar-btn, .titlebar-title { transition: none; }
   }
-  /* Right-side button cluster — theme dropdown + Settings + Donate.
+  /* Right-side button cluster — theme dropdown + Playbook + Settings.
      Now that the title bar's right half is otherwise empty, this is
      the natural Mac spot for app controls (Mail's right-side toolbar
      uses the same alignment). Nudged 1 px below center to align

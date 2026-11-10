@@ -1,14 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import X from "@lucide/svelte/icons/x";
-  import Heart from "@lucide/svelte/icons/heart";
-  import ExternalLink from "@lucide/svelte/icons/external-link";
   import Sparkles from "@lucide/svelte/icons/sparkles";
 
   import { ui } from "$lib/stores/ui.svelte";
   import { appVersion } from "$lib/api";
   import { safeOpenUrl } from "$lib/util/url";
-  import { SPONSOR_URL } from "$lib/util/donate";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { AGENCY_NAME } from "$lib/util/brand";
   import appIcon from "$lib/assets/app-icon.png";
@@ -47,7 +44,6 @@
     return () => window.removeEventListener("keydown", onKeydown);
   });
 
-  function openSponsor()        { void safeOpenUrl(SPONSOR_URL); }
   function openRepo()           { void safeOpenUrl(REPO_URL); }
   function openLicense()        { void safeOpenUrl(LICENSE_URL); }
   function openAgencyAgents()   { void safeOpenUrl(AGENCY_AGENTS_URL); }
@@ -79,12 +75,6 @@
         <div><dt>{i18n.t("about.license")}</dt><dd><button class="link" onclick={openLicense}>MIT</button></dd></div>
         <div><dt>{i18n.t("about.repo")}</dt><dd><button class="link" onclick={openRepo}>github.com/directoriescanada/agency-agents-app</button></dd></div>
       </dl>
-
-      <button class="donate-cta" onclick={openSponsor} title={i18n.t("about.sponsorTitle")}>
-        <Heart size={16} />
-        <span>{i18n.t("about.donate")}</span>
-        <ExternalLink size={12} />
-      </button>
 
       <section class="credits">
         <h2><Sparkles size={14} /> {i18n.t("about.builtWith")}</h2>
@@ -189,24 +179,6 @@
   dt { color: var(--color-text-muted); }
   dd { color: var(--color-text-primary); margin: 0; min-width: 0; overflow-wrap: anywhere; }
   .mono { font-family: var(--font-mono); }
-
-  .donate-cta {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-    width: 100%;
-    padding: var(--space-3);
-    background: var(--color-brand);
-    color: var(--color-text-inverse);
-    border-radius: var(--radius-md);
-    font-weight: var(--fw-semibold);
-    font-size: var(--text-body);
-    cursor: pointer;
-    transition: filter 0.12s ease, transform 0.12s ease;
-    margin-bottom: var(--space-4);
-  }
-  .donate-cta:hover { filter: brightness(1.05); transform: translateY(-1px); }
 
   .credits {
     border-top: 1px solid var(--color-border);

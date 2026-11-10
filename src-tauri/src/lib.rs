@@ -233,8 +233,8 @@ fn build_app_menu<R: tauri::Runtime>(
     // App menu: About (custom — opens our in-app modal), Settings…, ─, Hide
     // / Hide-Others / Show-All, ─, Quit. The native PredefinedMenuItem::about
     // would open the OS dialog; we route through our own modal instead via
-    // a MenuItemBuilder + the menu event so the donate CTA + Anthropic
-    // credits render in our UI.
+    // a MenuItemBuilder + the menu event so the credits render
+    // in our UI.
     let about_item = MenuItemBuilder::new(format!("About {}", pkg.name))
         .id(MENU_EVENT_ABOUT)
         .build(app)?;
