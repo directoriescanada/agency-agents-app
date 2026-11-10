@@ -43,6 +43,18 @@ const ALLOWED_TOOLS: &str = "WebSearch,WebFetch,Read,Glob,Grep";
 /// Tools an agent may never use from the office.
 const DISALLOWED_TOOLS: &str = "Bash,Edit,Write,MultiEdit,NotebookEdit,Agent,Task";
 
+/// Flags that keep a run to the office's own setup instead of whatever is
+/// installed in the user's personal Claude Code: no MCP servers, no skills,
+/// and no user-level settings, which is where personal plugins (and their
+/// hooks) are switched on. Sign-in lives in the keychain and is unaffected.
+/// Deliberately not `--bare`: that skips the keychain and signs the run out.
+const ISOLATION_ARGS: [&str; 4] = [
+    "--strict-mcp-config",
+    "--disable-slash-commands",
+    "--setting-sources",
+    "project,local",
+];
+
 /// Where tasks run. Kept inside app data so file reads cannot wander into
 /// the user's own projects by accident.
 fn office_dir(state: &AppState) -> PathBuf {
@@ -441,10 +453,15 @@ async fn run_task(
         .arg("--include-partial-messages")
         .arg("--append-system-prompt")
         .arg(&system)
+        // `--tools` makes the read-only set the only tools that exist for
+        // the run; `--allowedTools` pre-approves them so nothing prompts.
+        .arg("--tools")
+        .arg(ALLOWED_TOOLS)
         .arg("--allowedTools")
         .arg(ALLOWED_TOOLS)
         .arg("--disallowedTools")
         .arg(DISALLOWED_TOOLS)
+        .args(ISOLATION_ARGS)
         .arg("--max-turns")
         .arg(MAX_TURNS.to_string())
         .env("PATH", child_path_var())
@@ -809,8 +826,12 @@ Reply with exactly one line containing only the chosen slug. No other text."
         .arg("1")
         .arg("--model")
         .arg("haiku")
+        // A routing answer is one line of text: it needs no tools at all.
+        .arg("--tools")
+        .arg("")
         .arg("--disallowedTools")
         .arg(DISALLOWED_TOOLS)
+        .args(ISOLATION_ARGS)
         .env("PATH", child_path_var())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
