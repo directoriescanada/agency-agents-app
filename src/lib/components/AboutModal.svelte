@@ -130,9 +130,8 @@
     width: 80px;
     height: 80px;
     margin: 0 auto var(--space-2);
-    /* The PNG already carries the rounded-square shape on transparent corners;
-       drop-shadow follows the alpha so the shadow is squircle-shaped, not boxy. */
-    filter: drop-shadow(0 6px 16px color-mix(in oklch, black 45%, transparent));
+    /* No drop-shadow: the mark sits inside a transparent margin, and WebKit
+       clips the shadow to the image box, which showed as a grey square. */
   }
 
   /* One export per appearance — a light plate in a dark window reads as a bug.
