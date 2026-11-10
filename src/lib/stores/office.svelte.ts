@@ -56,6 +56,7 @@ class OfficeStore {
   private unlisten: UnlistenFn | null = null;
   private loaded = false;
   private clock: ReturnType<typeof setInterval> | null = null;
+  private watchers = new Set<(ev: OfficeTaskEvent) => void>();
 
   /** Subscribe to task events and load history. Idempotent. */
   async start(): Promise<void> {
@@ -95,7 +96,18 @@ class OfficeStore {
     }
   }
 
+  /**
+   * Watch raw task events as they arrive, each exactly once. For things that
+   * animate on the moment something happens (a paper leaving the board)
+   * rather than on what the task list says. Returns the unsubscribe.
+   */
+  subscribe(fn: (ev: OfficeTaskEvent) => void): () => void {
+    this.watchers.add(fn);
+    return () => void this.watchers.delete(fn);
+  }
+
   private apply(ev: OfficeTaskEvent): void {
+    for (const fn of this.watchers) fn(ev);
     if (ev.kind === "started") {
       if (!this.tasks.some((t) => t.id === ev.task.id)) this.tasks = [...this.tasks, ev.task];
       return;

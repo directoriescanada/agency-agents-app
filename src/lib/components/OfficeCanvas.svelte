@@ -21,6 +21,7 @@
     type Palette,
     type SceneDepartment,
   } from "$lib/office/scene";
+  import { OfficeSim } from "$lib/office/sim";
 
   interface Props {
     departments: SceneDepartment[];
@@ -53,6 +54,8 @@
   let host: HTMLDivElement | undefined = $state();
   let canvas: HTMLCanvasElement | undefined = $state();
   let renderer: OfficeRenderer | null = null;
+  /** Who is out of their chair and where; each canvas runs its own. */
+  const sim = new OfficeSim();
   let hovered: HoverTarget | null = $state(null);
   let cursor = $state("grab");
 
@@ -84,6 +87,7 @@
     const name = agencyName;
     if (!renderer) return;
     renderer.layout = buildLayout(deps, name);
+    sim.setLayout(renderer.layout);
     snap = true;
     if (interactive && !userMoved) renderer.home();
   });
@@ -106,6 +110,15 @@
     renderer = new OfficeRenderer(canvas, readPalette());
     renderer.status = (slug) => office.deskStatus(slug);
     renderer.layout = buildLayout(departments, agencyName);
+    renderer.sim = sim;
+    sim.setLayout(renderer.layout);
+
+    // Reduced motion: everyone stays seated and no paper flies.
+    const calmQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const syncCalm = () => (sim.calm = calmQuery.matches);
+    syncCalm();
+    calmQuery.addEventListener("change", syncCalm);
+    const offEvents = office.subscribe((ev) => sim.onTaskEvent(ev));
 
     const ro = new ResizeObserver(() => {
       const r = hostEl.getBoundingClientRect();
@@ -134,6 +147,10 @@
           running: office.running.length,
           doneToday: office.tasks.filter((x) => x.status === "done" && x.finishedAt && new Date(x.finishedAt).toDateString() === today).length,
         };
+        sim.tick(dt, {
+          zoom: renderer.cam.zoom,
+          isIdle: (slug) => office.deskStatus(slug) === "idle",
+        });
         renderer.render(t);
       }
       raf = requestAnimationFrame(loop);
@@ -149,6 +166,8 @@
       cancelAnimationFrame(raf);
       ro.disconnect();
       mo.disconnect();
+      calmQuery.removeEventListener("change", syncCalm);
+      offEvents();
       renderer = null;
     };
   });

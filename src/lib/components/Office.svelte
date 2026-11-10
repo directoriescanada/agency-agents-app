@@ -17,7 +17,7 @@
   import { ui } from "$lib/stores/ui.svelte";
   import { AGENCY_NAME } from "$lib/util/brand";
   import type { Agent, OfficeTask } from "$lib/types";
-  import { buildDepartments } from "$lib/office/scene";
+  import { buildDepartments, LOBBY_SLUG } from "$lib/office/scene";
   import { formatCost, formatElapsed, revealDeliverable, statusLabel, statusTone } from "$lib/office/format";
 
   import OfficeCanvas from "./OfficeCanvas.svelte";
@@ -66,9 +66,11 @@
   function pickPod(slug: string) {
     office.selectedAgent = null;
     office.selectedTask = null;
+    canvasRef?.focusPod(slug);
+    // The lobby is a place to look at, not a department to send work to.
+    if (slug === LOBBY_SLUG) return;
     office.composerDepartment = slug;
     office.composerAgent = null;
-    canvasRef?.focusPod(slug);
   }
   function pickNothing() {
     office.selectedAgent = null;

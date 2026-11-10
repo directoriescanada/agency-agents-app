@@ -18,6 +18,7 @@
  */
 
 import type { DeskStatus } from "$lib/stores/office.svelte";
+import type { Actor, OfficeSim, Paper } from "./sim";
 
 export const TILE_W = 64;
 export const TILE_H = 32;
@@ -98,8 +99,33 @@ export interface Layout {
   maxY: number;
 }
 
+/** The lobby is laid out like a pod but is no department. */
+export const LOBBY_SLUG = "__lobby";
 const LOBBY_W = 9;
 const LOBBY_H = 6;
+
+interface Footprint {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Where the lobby's furniture stands. One source for the renderer, which
+ * draws it, and the walk simulation, which has to go round it.
+ */
+export function lobbyPlan(p: Pod): { counter: Footprint; board: Footprint; coffee: Footprint; plants: { x: number; y: number }[] } {
+  return {
+    counter: { x: p.x + 1.2, y: p.y + p.h - 2.2, w: p.w - 2.4, h: 0.7 },
+    board: { x: p.x + p.w / 2 - 1.1, y: p.y + p.h / 2 + 0.2, w: 2.2, h: 0.1 },
+    coffee: { x: p.x + p.w - 4.0, y: p.y + 0.35, w: 2.4, h: 0.6 },
+    plants: [
+      { x: p.x + 0.9, y: p.y + 0.9 },
+      { x: p.x + p.w - 0.9, y: p.y + 0.9 },
+    ],
+  };
+}
 /** A desk cell: 2 tiles wide, 1.8 deep (person at the back, desk in front). */
 const CELL_W = 2;
 const CELL_D = 1.8;
@@ -193,7 +219,7 @@ export function buildLayout(departments: SceneDepartment[], agencyName: string):
   const b0 = pods.length > 0 ? bounds() : { minX: 0, minY: 0, maxX: LOBBY_W, maxY: -GAP };
   const lobby: Pod = {
     kind: "lobby",
-    slug: "__lobby",
+    slug: LOBBY_SLUG,
     label: agencyName,
     color: "#d97706",
     x: Math.round((b0.minX + b0.maxX) / 2 - LOBBY_W / 2),
@@ -311,6 +337,8 @@ export class OfficeRenderer {
   selectedAgent: string | null = null;
   selectedPod: string | null = null;
   stats: RenderStats = { running: 0, doneToday: 0 };
+  /** Who is away from their desk and what is in the air. Without one, everybody sits. */
+  sim: OfficeSim | null = null;
 
   private ctx: CanvasRenderingContext2D;
   private width = 0;
@@ -494,11 +522,25 @@ export class OfficeRenderer {
       }
       for (const d of p.desks) {
         const status = this.status(d.agent.slug);
-        items.push({ depth: d.cx + d.cy + 1.2, draw: () => this.drawDesk(d, status, t) });
+        const away = this.sim ? !this.sim.isAtDesk(d.agent.slug) : false;
+        items.push({ depth: d.cx + d.cy + 1.2, draw: () => this.drawDesk(d, status, t, away) });
+      }
+    }
+    if (this.sim) {
+      // Someone walking sorts a little behind their feet, so the desk they
+      // are passing on the far side of an aisle still overlaps them.
+      // The lobby is one drawable, and the sim keeps people out from behind
+      // its furniture, so anyone inside it is drawn after it.
+      const lb = l.lobby;
+      for (const a of this.sim.moving) {
+        const inLobby = a.x >= lb.x && a.x <= lb.x + lb.w && a.y >= lb.y && a.y <= lb.y + lb.h;
+        const depth = a.x + a.y - 0.6;
+        items.push({ depth: inLobby ? Math.max(depth, lb.x + lb.y + 2.01) : depth, draw: () => this.drawActor(a, t) });
       }
     }
     items.sort((a, b) => a.depth - b.depth);
     for (const it of items) it.draw();
+    if (this.sim) for (const paper of this.sim.papers) this.drawPaper(paper);
 
     this.drawPodLabels();
     this.drawHoverTag();
@@ -641,11 +683,12 @@ export class OfficeRenderer {
     ctx.stroke();
   }
 
-  private drawDesk(d: Desk, status: DeskStatus, t: number): void {
+  private drawDesk(d: Desk, status: DeskStatus, t: number, away = false): void {
     const { ctx, cam, palette } = this;
     const z = cam.zoom;
     const rgb = hexToRgb(d.pod.color);
-    const working = status === "working";
+    // Nobody in the chair: the screen stays dark until they are back.
+    const working = status === "working" && !away;
     const isSel = this.selectedAgent === d.agent.slug;
     const isHov = this.hovered?.kind === "agent" && this.hovered.slug === d.agent.slug;
 
@@ -684,8 +727,8 @@ export class OfficeRenderer {
     this.box(seatX - 0.26, seatY - 0.42, 0.52, 0.12, 0, 0.75, chairRgb); // back rest
     this.box(seatX - 0.26, seatY - 0.32, 0.52, 0.45, 0, 0.3, chairRgb); // seat
 
-    // Person
-    this.drawPerson(seatX, seatY, rgb, status, t, d.phase);
+    // Person (an agent on their feet is drawn by drawActor, wherever they are)
+    if (!away) this.drawPerson(seatX, seatY, rgb, status, t, d.phase);
 
     // Desk (in front of the person, drawn after so it overlaps their lap)
     const deskRgb: [number, number, number] = palette.dark ? [150, 128, 104] : [214, 196, 170];
@@ -710,10 +753,13 @@ export class OfficeRenderer {
     // Small keyboard
     this.box(seatX - 0.18, deskY + 0.32, 0.36, 0.12, deskH, 0.03, palette.dark ? [90, 92, 100] : [120, 124, 132]);
 
-    // Status bubble above the head
-    const [hx, hy] = project(seatX, seatY, 1.45, cam);
-    this.anchors.push({ slug: d.agent.slug, sx: hx, sy: hy + 10 * z, r: Math.max(14, 16 * z) });
-    if (status !== "idle") this.drawBubble(hx, hy - 6 * z, status, t, d.phase);
+    // Status bubble above the head. The hit target is the person, so it
+    // leaves with them.
+    if (!away) {
+      const [hx, hy] = project(seatX, seatY, 1.45, cam);
+      this.anchors.push({ slug: d.agent.slug, sx: hx, sy: hy + 10 * z, r: Math.max(14, 16 * z) });
+      if (status !== "idle") this.drawBubble(hx, hy - 6 * z, status, t, d.phase);
+    }
 
     // Name tag at high zoom (hover/selection tags are drawn last, on top)
     if (z >= 1.35 && !isHov && !isSel) {
@@ -730,8 +776,7 @@ export class OfficeRenderer {
     const typing = working ? Math.sin(t / 110 + phase * 6.28) : 0;
 
     const [bx, by] = project(x, y, 0.3, cam); // hip
-    const skin = palette.dark ? "#e2b89a" : "#e8c3a4";
-    const hair = ["#2b1d14", "#4a2f1a", "#1c1c1e", "#7a4b2a", "#c9a36a", "#3b3b3b"][Math.floor(phase * 6) % 6];
+    const { skin, hair } = this.looks(phase);
 
     // Torso
     const tw = 13 * z;
@@ -789,6 +834,178 @@ export class OfficeRenderer {
     ctx.fill();
   }
 
+  /** Skin and hair, the same whether the agent is sitting or walking. */
+  private looks(phase: number): { skin: string; hair: string } {
+    return {
+      skin: this.palette.dark ? "#e2b89a" : "#e8c3a4",
+      hair: ["#2b1d14", "#4a2f1a", "#1c1c1e", "#7a4b2a", "#c9a36a", "#3b3b3b"][Math.floor(phase * 6) % 6],
+    };
+  }
+
+  /** Someone on their feet, standing or mid-stride, wherever the sim has put them. */
+  private drawActor(a: Actor, t: number): void {
+    const { ctx, cam, palette } = this;
+    const z = cam.zoom;
+    const shirt = hexToRgb(a.desk.pod.color);
+    const status = this.status(a.slug);
+    const isSel = this.selectedAgent === a.slug;
+    const isHov = this.hovered?.kind === "agent" && this.hovered.slug === a.slug;
+    const { skin, hair } = this.looks(a.desk.phase);
+
+    const [gx, gy] = project(a.x, a.y, 0, cam);
+    // Heading on screen: which way they move across the canvas, and whether
+    // we are looking at their back.
+    const sdx = a.fx - a.fy;
+    const sdy = (a.fx + a.fy) / 2;
+    const len = Math.hypot(sdx, sdy) || 1;
+    const ux = sdx / len;
+    const uy = sdy / len;
+    const back = sdy < -0.05;
+    const walking = a.pose === "walk";
+    const swing = walking ? Math.sin(a.stride * 5.4) : 0;
+    const bob = walking ? Math.abs(Math.cos(a.stride * 5.4)) * 1.1 * z : 0;
+
+    // On the floor: a halo when picked, and a shadow so the feet read as planted.
+    if (isSel || isHov) {
+      ctx.fillStyle = rgba(shirt, isSel ? 0.4 : 0.25);
+      ctx.beginPath();
+      ctx.ellipse(gx, gy, 14 * z, 7 * z, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = palette.dark ? "rgba(0,0,0,0.38)" : "rgba(0,0,0,0.16)";
+    ctx.beginPath();
+    ctx.ellipse(gx, gy, 7 * z, 3.2 * z, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const tw = 12 * z;
+    const th = 15 * z;
+    const hr = 6 * z;
+    const hipY = gy - 14 * z - bob;
+    const armY = hipY - th * 0.78;
+    ctx.lineCap = "round";
+
+    // Legs: one foot ahead along the heading, the other behind; the one
+    // coming forward lifts off the floor.
+    ctx.strokeStyle = palette.dark ? "#5a5f6c" : "#3d4150";
+    ctx.lineWidth = 3.6 * z;
+    ctx.beginPath();
+    for (const side of [-1, 1]) {
+      const s = side * swing;
+      ctx.moveTo(gx + side * 2.6 * z, hipY);
+      ctx.lineTo(gx + side * 2.6 * z + ux * 4.4 * z * s, gy + uy * 4.4 * z * s - Math.max(0, s) * 1.4 * z);
+    }
+    ctx.stroke();
+
+    const arm = (side: number) => {
+      const s = -side * swing; // arms swing against the legs
+      const hx = gx + side * (tw / 2 + 1 * z) + ux * 3.6 * z * s;
+      const hy = armY + 10 * z + uy * 2 * z * s;
+      ctx.strokeStyle = rgba(shade(shirt, -0.15), 1);
+      ctx.lineWidth = 3.2 * z;
+      ctx.beginPath();
+      ctx.moveTo(gx + side * (tw / 2 - 1 * z), armY);
+      ctx.lineTo(hx, hy);
+      ctx.stroke();
+      ctx.fillStyle = skin;
+      ctx.beginPath();
+      ctx.arc(hx, hy, 2 * z, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    // The cup rides in the right hand, held up in front of the chest.
+    const cupSide = a.carrying && !back ? 1 : 0;
+    for (const side of [-1, 1]) if (side !== cupSide) arm(side);
+
+    // Torso
+    ctx.fillStyle = rgba(shirt, 1);
+    roundRect(ctx, gx - tw / 2, hipY - th, tw, th + 1 * z, 4 * z);
+    ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.12)";
+    roundRect(ctx, gx + 1 * z, hipY - th, tw / 2 - 1 * z, th + 1 * z, 4 * z);
+    ctx.fill();
+
+    if (cupSide) {
+      const cx = gx + 4.5 * z;
+      const cy = hipY - th * 0.42;
+      ctx.strokeStyle = rgba(shade(shirt, -0.15), 1);
+      ctx.lineWidth = 3.2 * z;
+      ctx.beginPath();
+      ctx.moveTo(gx + tw / 2 - 1 * z, armY);
+      ctx.lineTo(cx + 1.5 * z, cy + 2.5 * z);
+      ctx.stroke();
+      ctx.fillStyle = "#fafafa";
+      roundRect(ctx, cx - 2 * z, cy - 2.6 * z, 4 * z, 5.2 * z, 1 * z);
+      ctx.fill();
+      ctx.fillStyle = "#6b4a32";
+      ctx.fillRect(cx - 2 * z, cy - 2.6 * z, 4 * z, 1.3 * z);
+      ctx.fillStyle = skin;
+      ctx.beginPath();
+      ctx.arc(cx + 1.8 * z, cy + 2.4 * z, 2 * z, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Head: the face when they come toward us, the back of the head when not.
+    const hy = hipY - th - hr - 1 * z;
+    ctx.fillStyle = skin;
+    ctx.beginPath();
+    ctx.arc(gx, hy, hr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = hair;
+    ctx.beginPath();
+    if (back) ctx.arc(gx, hy - hr * 0.12, hr * 0.99, Math.PI * 0.86, Math.PI * 2.14);
+    else ctx.arc(gx, hy - hr * 0.15, hr * 0.98, Math.PI, Math.PI * 2);
+    ctx.fill();
+    if (!back) {
+      const look = ux * hr * 0.28;
+      ctx.fillStyle = "#1f1f1f";
+      ctx.beginPath();
+      ctx.arc(gx + look - hr * 0.35, hy + hr * 0.1, 0.9 * z, 0, Math.PI * 2);
+      ctx.arc(gx + look + hr * 0.35, hy + hr * 0.1, 0.9 * z, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // The hit target and the status bubble travel with them.
+    this.anchors.push({ slug: a.slug, sx: gx, sy: hy + 2 * z, r: Math.max(14, 16 * z) });
+    if (status !== "idle") this.drawBubble(gx, hy - hr - 14 * z, status, t, a.desk.phase);
+  }
+
+  /** A sheet of paper in the air, with its shadow on the floor. */
+  private drawPaper(p: Paper): void {
+    const { ctx, cam, palette } = this;
+    const z = cam.zoom;
+    const [sx, sy] = project(p.x, p.y, p.z, cam);
+    const [gx, gy] = project(p.x, p.y, 0, cam);
+    const w = Math.max(5, 9 * z);
+    const h = Math.max(6.5, 12 * z);
+    ctx.save();
+    // Fades in off the board and out onto the desk.
+    ctx.globalAlpha = Math.max(0, Math.min(1, p.u / 0.08, (1 - p.u) / 0.08));
+    ctx.fillStyle = palette.dark ? "rgba(0,0,0,0.32)" : "rgba(0,0,0,0.13)";
+    ctx.beginPath();
+    ctx.ellipse(gx, gy, w * 0.6, w * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.translate(sx, sy);
+    ctx.rotate(Math.sin(p.u * Math.PI * 3) * 0.45);
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = palette.dark ? "rgba(0,0,0,0.55)" : "rgba(60,64,72,0.5)";
+    ctx.lineWidth = 1;
+    roundRect(ctx, -w / 2, -h / 2, w, h, 1.2);
+    ctx.fill();
+    ctx.stroke();
+    if (z >= 0.7) {
+      // A few lines of "text".
+      ctx.strokeStyle = "rgba(60,64,72,0.45)";
+      ctx.lineWidth = Math.max(0.8, 0.9 * z);
+      ctx.beginPath();
+      for (let i = 0; i < 3; i++) {
+        const ly = -h * 0.24 + i * h * 0.22;
+        ctx.moveTo(-w * 0.3, ly);
+        ctx.lineTo(i === 2 ? w * 0.08 : w * 0.3, ly);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   private drawBubble(x: number, y: number, status: DeskStatus, t: number, phase: number): void {
     const { ctx, palette } = this;
     const z = this.cam.zoom;
@@ -842,12 +1059,12 @@ export class OfficeRenderer {
     const { ctx, cam, palette } = this;
     const z = cam.zoom;
     const rgb = hexToRgb(p.color);
+    const plan = lobbyPlan(p);
     // Reception counter along the front
     const counterRgb: [number, number, number] = palette.dark ? [120, 96, 70] : [196, 170, 140];
-    this.box(p.x + 1.2, p.y + p.h - 2.2, p.w - 2.4, 0.7, 0, 0.55, counterRgb);
+    this.box(plan.counter.x, plan.counter.y, plan.counter.w, plan.counter.h, 0, 0.55, counterRgb);
     // Two plants in the back corners
-    this.drawPlant(p.x + 0.9, p.y + 0.9);
-    this.drawPlant(p.x + p.w - 0.9, p.y + 0.9);
+    for (const plant of plan.plants) this.drawPlant(plant.x, plant.y);
     // Wall sign: agency name floating above the back-right wall. A department
     // tag that lands on it wins: the tag is the more useful of the two.
     const detailed = z >= 0.45;
@@ -881,11 +1098,37 @@ export class OfficeRenderer {
       }
     }
 
+    // Coffee corner on the back wall: where people drift to between tasks.
+    const cf = plan.coffee;
+    const counterH = 0.62;
+    this.box(cf.x, cf.y, cf.w, cf.h, 0, counterH, counterRgb);
+    const machineRgb: [number, number, number] = palette.dark ? [62, 64, 72] : [72, 76, 86];
+    this.box(cf.x + 0.25, cf.y + 0.1, 0.55, 0.4, counterH, 0.5, machineRgb);
+    const cupRgb: [number, number, number] = palette.dark ? [222, 222, 226] : [248, 248, 248];
+    this.box(cf.x + 1.2, cf.y + 0.22, 0.15, 0.15, counterH, 0.15, cupRgb);
+    this.box(cf.x + 1.5, cf.y + 0.22, 0.15, 0.15, counterH, 0.15, cupRgb);
+    this.box(cf.x + 1.8, cf.y + 0.22, 0.15, 0.15, counterH, 0.15, cupRgb);
+    if (detailed) {
+      // Two threads of steam off the machine.
+      const [mx, my] = project(cf.x + 0.52, cf.y + 0.3, counterH + 0.5, cam);
+      ctx.strokeStyle = palette.dark ? "rgba(255,255,255,0.3)" : "rgba(90,96,108,0.38)";
+      ctx.lineWidth = Math.max(1, 1.2 * z);
+      ctx.lineCap = "round";
+      for (const side of [-1, 1]) {
+        const sway = Math.sin(t / 600 + side) * 1.6 * z;
+        const x0 = mx + side * 2.5 * z;
+        ctx.beginPath();
+        ctx.moveTo(x0, my - 1 * z);
+        ctx.quadraticCurveTo(x0 + sway, my - 5 * z, x0 - sway, my - 9 * z);
+        ctx.stroke();
+      }
+    }
+
     // Task board: a standing panel in the lobby with live counts.
-    const bx = p.x + p.w / 2;
-    const by = p.y + p.h / 2 + 0.2;
+    const bx = plan.board.x + plan.board.w / 2;
+    const by = plan.board.y;
     const boardRgb: [number, number, number] = palette.dark ? [38, 40, 46] : [250, 250, 250];
-    this.box(bx - 1.1, by, 2.2, 0.1, 0, 1.2, boardRgb);
+    this.box(plan.board.x, by, plan.board.w, plan.board.h, 0, 1.2, boardRgb);
     if (!roomy) return;
     const [tx, ty] = project(bx, by, 0.6, cam);
     const countSize = Math.max(10, 13 * z);
