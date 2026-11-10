@@ -6,6 +6,10 @@
    * handling (drag to pan, wheel to zoom, hover and click to pick desks or
    * pods). Catalog shape and live statuses come in as props; picks go out
    * as callbacks. The renderer itself is framework-free.
+   *
+   * With `interactive={false}` it becomes a window onto the office: nobody
+   * steers, the camera frames whoever is working (or the whole floor), and
+   * a click anywhere calls `onEnter`.
    */
   import { onMount } from "svelte";
   import { office } from "$lib/stores/office.svelte";
@@ -21,16 +25,33 @@
   interface Props {
     departments: SceneDepartment[];
     agencyName: string;
-    selectedAgent: string | null;
-    selectedPod: string | null;
-    onPickAgent: (slug: string) => void;
-    onPickPod: (slug: string) => void;
-    onPickNothing: () => void;
+    selectedAgent?: string | null;
+    selectedPod?: string | null;
+    onPickAgent?: (slug: string) => void;
+    onPickPod?: (slug: string) => void;
+    onPickNothing?: () => void;
+    /** `false`: no pan, zoom or picking; the camera directs itself. */
+    interactive?: boolean;
+    /** Non-interactive only: the view was clicked (or activated by keyboard). */
+    onEnter?: () => void;
+    /** Non-interactive only: accessible name of the click target. */
+    enterLabel?: string;
   }
-  let { departments, agencyName, selectedAgent, selectedPod, onPickAgent, onPickPod, onPickNothing }: Props = $props();
+  let {
+    departments,
+    agencyName,
+    selectedAgent = null,
+    selectedPod = null,
+    onPickAgent,
+    onPickPod,
+    onPickNothing,
+    interactive = true,
+    onEnter,
+    enterLabel,
+  }: Props = $props();
 
-  let host: HTMLDivElement;
-  let canvas: HTMLCanvasElement;
+  let host: HTMLDivElement | undefined = $state();
+  let canvas: HTMLCanvasElement | undefined = $state();
   let renderer: OfficeRenderer | null = null;
   let hovered: HoverTarget | null = $state(null);
   let cursor = $state("grab");
@@ -54,6 +75,8 @@
 
   /** Once the user pans or zooms, resizes and roster changes stop re-fitting. */
   let userMoved = false;
+  /** Non-interactive: jump the camera to its target on the next frame. */
+  let snap = true;
 
   // Rebuild the layout when the roster changes (not on every status tick).
   $effect(() => {
@@ -61,7 +84,8 @@
     const name = agencyName;
     if (!renderer) return;
     renderer.layout = buildLayout(deps, name);
-    if (!userMoved) renderer.home();
+    snap = true;
+    if (interactive && !userMoved) renderer.home();
   });
 
   $effect(() => {
@@ -77,20 +101,34 @@
   });
 
   onMount(() => {
+    if (!host || !canvas) return;
+    const hostEl = host;
     renderer = new OfficeRenderer(canvas, readPalette());
     renderer.status = (slug) => office.deskStatus(slug);
     renderer.layout = buildLayout(departments, agencyName);
 
     const ro = new ResizeObserver(() => {
-      const r = host.getBoundingClientRect();
+      const r = hostEl.getBoundingClientRect();
       renderer?.resize(r.width, r.height, window.devicePixelRatio || 1);
-      if (!userMoved && r.width > 0) renderer?.home();
+      snap = true;
+      if (interactive && !userMoved && r.width > 0) renderer?.home();
     });
-    ro.observe(host);
+    ro.observe(hostEl);
 
     let raf = 0;
+    let last = 0;
     const loop = (t: number) => {
+      const dt = last ? Math.min(0.1, (t - last) / 1000) : 0;
+      last = t;
       if (renderer) {
+        if (!interactive) {
+          renderer.follow(
+            office.running.map((x) => x.agentSlug),
+            dt,
+            snap,
+          );
+          snap = false;
+        }
         const today = new Date().toDateString();
         renderer.stats = {
           running: office.running.length,
@@ -122,7 +160,7 @@
   let lastY = 0;
 
   function local(e: PointerEvent | WheelEvent): [number, number] {
-    const r = canvas.getBoundingClientRect();
+    const r = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
     return [e.clientX - r.left, e.clientY - r.top];
   }
 
@@ -131,7 +169,7 @@
     dragging = true;
     moved = 0;
     [lastX, lastY] = local(e);
-    canvas.setPointerCapture(e.pointerId);
+    (e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId);
     cursor = "grabbing";
   }
 
@@ -157,13 +195,13 @@
     if (!dragging) return;
     dragging = false;
     cursor = hovered ? "pointer" : "grab";
-    canvas.releasePointerCapture(e.pointerId);
+    (e.currentTarget as HTMLCanvasElement).releasePointerCapture(e.pointerId);
     if (moved > 6) return; // a drag, not a click
     const [x, y] = local(e);
     const h = renderer?.hitTest(x, y) ?? null;
-    if (!h) onPickNothing();
-    else if (h.kind === "agent") onPickAgent(h.slug);
-    else onPickPod(h.slug);
+    if (!h) onPickNothing?.();
+    else if (h.kind === "agent") onPickAgent?.(h.slug);
+    else onPickPod?.(h.slug);
   }
 
   function onPointerLeave() {
@@ -183,6 +221,12 @@
     }
   }
 
+  function onEnterKey(e: KeyboardEvent) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    onEnter?.();
+  }
+
   export function fit() {
     userMoved = false;
     renderer?.fit();
@@ -193,24 +237,39 @@
   }
   export function zoomBy(factor: number) {
     userMoved = true;
+    if (!host) return;
     const r = host.getBoundingClientRect();
     renderer?.zoomAt(r.width / 2, r.height / 2, factor);
   }
 </script>
 
-<div class="host" bind:this={host}>
-  <canvas
-    bind:this={canvas}
-    style="cursor: {cursor}"
-    onpointerdown={onPointerDown}
-    onpointermove={onPointerMove}
-    onpointerup={onPointerUp}
-    onpointercancel={onPointerUp}
-    onpointerleave={onPointerLeave}
-    onwheel={onWheel}
-    aria-label="Isometric office"
-  ></canvas>
-</div>
+{#if interactive}
+  <div class="host" bind:this={host}>
+    <canvas
+      bind:this={canvas}
+      style="cursor: {cursor}"
+      onpointerdown={onPointerDown}
+      onpointermove={onPointerMove}
+      onpointerup={onPointerUp}
+      onpointercancel={onPointerUp}
+      onpointerleave={onPointerLeave}
+      onwheel={onWheel}
+      aria-label="Isometric office"
+    ></canvas>
+  </div>
+{:else}
+  <div
+    class="host enter"
+    bind:this={host}
+    role="button"
+    tabindex="0"
+    aria-label={enterLabel}
+    onclick={() => onEnter?.()}
+    onkeydown={onEnterKey}
+  >
+    <canvas bind:this={canvas} aria-hidden="true"></canvas>
+  </div>
+{/if}
 
 <style>
   .host {
@@ -220,6 +279,8 @@
     overflow: hidden;
     background: var(--color-surface-sunken);
   }
+  .host.enter { cursor: pointer; }
+  .host.enter:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: -2px; }
   canvas {
     display: block;
     width: 100%;

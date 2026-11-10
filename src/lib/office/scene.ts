@@ -38,6 +38,30 @@ export interface SceneDepartment {
   agents: SceneAgent[];
 }
 
+/**
+ * Group a flat roster into departments, in the order the catalog first
+ * mentions each one. Labels and colours come from the caller's lookups so
+ * this module stays free of stores.
+ */
+export function buildDepartments(
+  agents: readonly (SceneAgent & { category: string })[],
+  labelOf: (slug: string) => string,
+  colorOf: (slug: string) => string,
+): SceneDepartment[] {
+  const byCategory = new Map<string, SceneAgent[]>();
+  for (const a of agents) {
+    const list = byCategory.get(a.category) ?? [];
+    list.push({ slug: a.slug, name: a.name, emoji: a.emoji });
+    byCategory.set(a.category, list);
+  }
+  return [...byCategory.entries()].map(([slug, list]) => ({
+    slug,
+    label: labelOf(slug),
+    color: colorOf(slug),
+    agents: list,
+  }));
+}
+
 // ---------- Layout ----------
 
 export interface Pod {
@@ -264,6 +288,20 @@ interface Drawable {
   draw: () => void;
 }
 
+/** A department name tag with its screen rectangle. */
+interface PodTag {
+  pod: Pod;
+  text: string;
+  working: number;
+  pointed: boolean;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  cx: number;
+  cy: number;
+}
+
 export class OfficeRenderer {
   readonly cam: Camera = { ox: 0, oy: 0, zoom: 1 };
   layout: Layout | null = null;
@@ -280,6 +318,8 @@ export class OfficeRenderer {
   private dpr = 1;
   /** Agent screen anchors from the last frame, for hit-testing. */
   private anchors: { slug: string; sx: number; sy: number; r: number }[] = [];
+  /** Department tags that will be drawn this frame, placed before anything else so fixtures can keep clear. */
+  private podTags: PodTag[] = [];
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -299,28 +339,76 @@ export class OfficeRenderer {
     this.canvas.height = Math.max(1, Math.round(height * dpr));
   }
 
-  /** Centre the whole office in the viewport. */
-  fit(padding = 40): void {
-    const l = this.layout;
-    if (!l || this.width === 0) return;
+  /** The camera that centres a world rect (in tiles) in the viewport. */
+  private frame(minX: number, minY: number, maxX: number, maxY: number, padding: number, maxZoom: number): Camera | null {
+    if (this.width === 0 || this.height === 0) return null;
     // Project the four world corners at zoom 1 to measure the footprint.
     const unit: Camera = { ox: 0, oy: 0, zoom: 1 };
     const corners = [
-      project(l.minX, l.minY, 0, unit),
-      project(l.maxX, l.minY, 0, unit),
-      project(l.minX, l.maxY, 0, unit),
-      project(l.maxX, l.maxY, 0, unit),
+      project(minX, minY, 0, unit),
+      project(maxX, minY, 0, unit),
+      project(minX, maxY, 0, unit),
+      project(maxX, maxY, 0, unit),
     ];
     const xs = corners.map((c) => c[0]);
     const ys = corners.map((c) => c[1]);
     const w = Math.max(...xs) - Math.min(...xs);
     const h = Math.max(...ys) - Math.min(...ys) + TILE_H * 2.5; // walls + labels
-    const zoom = Math.max(0.15, Math.min(1.6, (this.width - padding * 2) / w, (this.height - padding * 2) / h));
-    this.cam.zoom = zoom;
+    const zoom = Math.max(0.15, Math.min(maxZoom, (this.width - padding * 2) / w, (this.height - padding * 2) / h));
     const cx = ((Math.max(...xs) + Math.min(...xs)) / 2) * zoom;
     const cy = ((Math.max(...ys) + Math.min(...ys)) / 2) * zoom - TILE_H * zoom;
-    this.cam.ox = this.width / 2 - cx;
-    this.cam.oy = this.height / 2 - cy;
+    return { zoom, ox: this.width / 2 - cx, oy: this.height / 2 - cy };
+  }
+
+  /** Centre the whole office in the viewport. */
+  fit(padding = 40): void {
+    const l = this.layout;
+    if (!l) return;
+    const cam = this.frame(l.minX, l.minY, l.maxX, l.maxY, padding, 1.6);
+    if (cam) Object.assign(this.cam, cam);
+  }
+
+  /**
+   * Director's camera, for a view nobody is steering: ease toward the desks
+   * in `slugs` (the ones at work), or back out to the whole floor when the
+   * list is empty. Call once a frame with the frame time in seconds; `snap`
+   * jumps straight there (first frame, resize, new layout).
+   */
+  follow(slugs: readonly string[], dt: number, snap = false, padding = 14): void {
+    const l = this.layout;
+    if (!l) return;
+    let target: Camera | null = null;
+    const desks = slugs.length > 0 ? l.desks.filter((d) => slugs.includes(d.agent.slug)) : [];
+    if (desks.length > 0) {
+      const margin = 2.5; // tiles of context around the working desks
+      target = this.frame(
+        Math.min(...desks.map((d) => d.cx)) - margin,
+        Math.min(...desks.map((d) => d.cy)) - margin,
+        Math.max(...desks.map((d) => d.cx + CELL_W)) + margin,
+        Math.max(...desks.map((d) => d.cy + CELL_D)) + margin,
+        padding,
+        1.05,
+      );
+    }
+    target ??= this.frame(l.minX, l.minY, l.maxX, l.maxY, padding, 1.6);
+    if (!target) return;
+    if (snap) {
+      Object.assign(this.cam, target);
+      return;
+    }
+    // Ease the point under the viewport centre (in world space) and the zoom
+    // (in log space) separately, so the move reads as one glide rather than
+    // a swing.
+    const k = 1 - Math.exp(-Math.min(dt, 0.1) * 2.4);
+    const mx = this.width / 2;
+    const my = this.height / 2;
+    const [fx, fy] = unproject(mx, my, this.cam);
+    const [tx, ty] = unproject(mx, my, target);
+    const zoom = Math.exp(Math.log(this.cam.zoom) + (Math.log(target.zoom) - Math.log(this.cam.zoom)) * k);
+    const [px, py] = project(fx + (tx - fx) * k, fy + (ty - fy) * k, 0, { ox: 0, oy: 0, zoom });
+    this.cam.zoom = zoom;
+    this.cam.ox = mx - px;
+    this.cam.oy = my - py;
   }
 
   /**
@@ -392,6 +480,7 @@ export class OfficeRenderer {
     if (!l) return;
 
     this.drawGrid();
+    this.podTags = this.placePodLabels(l.pods);
 
     // Floors and back walls first (flat), then everything that stands.
     for (const p of l.pods) this.drawFloor(p);
@@ -411,7 +500,7 @@ export class OfficeRenderer {
     items.sort((a, b) => a.depth - b.depth);
     for (const it of items) it.draw();
 
-    for (const p of l.pods) this.drawPodLabel(p);
+    this.drawPodLabels();
     this.drawHoverTag();
   }
 
@@ -759,19 +848,37 @@ export class OfficeRenderer {
     // Two plants in the back corners
     this.drawPlant(p.x + 0.9, p.y + 0.9);
     this.drawPlant(p.x + p.w - 0.9, p.y + 0.9);
-    // Wall sign: agency name floating above the back-right wall
+    // Wall sign: agency name floating above the back-right wall. A department
+    // tag that lands on it wins: the tag is the more useful of the two.
+    const detailed = z >= 0.45;
+    // Below this the task board is too small to carry two lines of text.
+    const roomy = z >= 0.8;
+    const live = this.stats.running;
+    const pulse = live > 0 ? 0.75 + 0.25 * Math.sin(t / 500) : 1;
+    const liveInk = live > 0 ? `rgba(120,200,255,${pulse})` : palette.textMuted;
+    const font = (weight: number, px: number) => `${weight} ${px}px -apple-system, "Segoe UI", system-ui, sans-serif`;
+
     const [sx, sy] = project(p.x + p.w / 2, p.y + 0.6, 1.9, cam);
-    const size = Math.max(9, 20 * z);
-    ctx.font = `700 ${size}px -apple-system, "Segoe UI", system-ui, sans-serif`;
+    const nameSize = Math.max(9, 20 * z);
+    const subSize = Math.max(9, 10 * z);
+    const name = p.label.toUpperCase();
+    ctx.font = font(700, nameSize);
+    const nameW = ctx.measureText(name).width;
+    const covered = this.podTags.some(
+      (tag) => tag.x < sx + nameW / 2 && sx - nameW / 2 < tag.x + tag.w && tag.y < sy + 2 && sy - nameSize < tag.y + tag.h,
+    );
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = rgba(rgb, 0.95);
-    ctx.fillText(p.label.toUpperCase(), sx, sy);
-    const detailed = z >= 0.45;
-    if (detailed) {
-      ctx.font = `500 ${Math.max(9, 10 * z)}px -apple-system, "Segoe UI", system-ui, sans-serif`;
-      ctx.fillStyle = palette.textMuted;
-      ctx.fillText("HEADQUARTERS", sx, sy + 12 * z);
+    if (!covered) {
+      ctx.fillStyle = rgba(rgb, 0.95);
+      ctx.fillText(name, sx, sy);
+      if (detailed) {
+        // The second line sits a full line below the first whatever the zoom.
+        ctx.font = font(500, subSize);
+        ctx.fillStyle = roomy ? palette.textMuted : liveInk;
+        const sub = roomy ? "HEADQUARTERS" : `${live} working · ${this.stats.doneToday} done today`;
+        ctx.fillText(sub, sx, sy + subSize + 3);
+      }
     }
 
     // Task board: a standing panel in the lobby with live counts.
@@ -779,17 +886,17 @@ export class OfficeRenderer {
     const by = p.y + p.h / 2 + 0.2;
     const boardRgb: [number, number, number] = palette.dark ? [38, 40, 46] : [250, 250, 250];
     this.box(bx - 1.1, by, 2.2, 0.1, 0, 1.2, boardRgb);
-    if (!detailed) return;
-    const [tx, ty] = project(bx, by, 1.0, cam);
-    const live = this.stats.running;
-    const pulse = live > 0 ? 0.75 + 0.25 * Math.sin(t / 500) : 1;
-    ctx.font = `700 ${Math.max(10, 13 * z)}px -apple-system, "Segoe UI", system-ui, sans-serif`;
+    if (!roomy) return;
+    const [tx, ty] = project(bx, by, 0.6, cam);
+    const countSize = Math.max(10, 13 * z);
     ctx.textAlign = "center";
-    ctx.fillStyle = live > 0 ? `rgba(120,200,255,${pulse})` : palette.textMuted;
-    ctx.fillText(`${live} working`, tx, ty - 2 * z);
-    ctx.font = `500 ${Math.max(9, 10 * z)}px -apple-system, "Segoe UI", system-ui, sans-serif`;
+    ctx.textBaseline = "alphabetic";
+    ctx.font = font(700, countSize);
+    ctx.fillStyle = liveInk;
+    ctx.fillText(`${live} working`, tx, ty - 2);
+    ctx.font = font(500, subSize);
     ctx.fillStyle = palette.textMuted;
-    ctx.fillText(`${this.stats.doneToday} done today`, tx, ty + 10 * z);
+    ctx.fillText(`${this.stats.doneToday} done today`, tx, ty + subSize + 1);
   }
 
   private drawPlant(x: number, y: number): void {
@@ -806,35 +913,70 @@ export class OfficeRenderer {
     }
   }
 
-  private drawPodLabel(p: Pod): void {
-    if (p.kind === "lobby") return;
-    const { ctx, cam, palette } = this;
+  /**
+   * Department name tags. When the floor is small on screen the tags are
+   * wider than the pods they name, so they are placed in order of interest
+   * (the pod under the pointer, then pods with work running, then the biggest)
+   * and a tag that would cover one already placed is left out.
+   */
+  private placePodLabels(pods: readonly Pod[]): PodTag[] {
+    const { ctx, cam } = this;
     const z = cam.zoom;
-    const [sx, sy] = project(p.x + p.w / 2, p.y, 1.0, cam);
-    let working = 0;
-    for (const d of p.desks) if (this.status(d.agent.slug) === "working") working++;
     const compact = z < 0.45;
     const size = compact ? 9 : Math.max(10, 12 * Math.min(1.2, z));
     ctx.font = `600 ${size}px -apple-system, "Segoe UI", system-ui, sans-serif`;
+    const h = size + 10;
+
+    const tags = pods
+      .filter((p) => p.kind !== "lobby")
+      .map((p): PodTag => {
+        let working = 0;
+        for (const d of p.desks) if (this.status(d.agent.slug) === "working") working++;
+        const text = compact
+          ? `${p.label}${working ? ` · ${working}` : ""}`
+          : `${p.label}  ·  ${p.desks.length}${working ? `  ·  ${working} working` : ""}`;
+        const [sx, sy] = project(p.x + p.w / 2, p.y, 1.0, cam);
+        const w = ctx.measureText(text).width + 22;
+        const pointed = this.hovered?.kind === "pod" && this.hovered.slug === p.slug;
+        return { pod: p, text, working, pointed, x: sx - w / 2, y: sy - h / 2 - 4, w, h, cx: sx, cy: sy - 4 };
+      })
+      .sort(
+        (a, b) =>
+          Number(b.pointed) - Number(a.pointed) || b.working - a.working || b.pod.desks.length - a.pod.desks.length,
+      );
+
+    const gap = 3;
+    const placed: PodTag[] = [];
+    for (const tag of tags) {
+      const covers = placed.some(
+        (o) => tag.x < o.x + o.w + gap && o.x < tag.x + tag.w + gap && tag.y < o.y + h + gap && o.y < tag.y + h + gap,
+      );
+      if (!covers) placed.push(tag);
+    }
+    return placed;
+  }
+
+  private drawPodLabels(): void {
+    const { ctx, palette } = this;
+    const first = this.podTags[0];
+    if (!first) return;
+    ctx.font = `600 ${first.h - 10}px -apple-system, "Segoe UI", system-ui, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    const text = compact
-      ? `${p.label}${working ? ` · ${working}` : ""}`
-      : `${p.label}  ·  ${p.desks.length}${working ? `  ·  ${working} working` : ""}`;
-    const w = ctx.measureText(text).width + 22;
-    const h = size + 10;
-    ctx.fillStyle = palette.dark ? "rgba(20,20,24,0.82)" : "rgba(255,255,255,0.88)";
-    ctx.strokeStyle = rgba(hexToRgb(p.color), 0.6);
     ctx.lineWidth = 1;
-    roundRect(ctx, sx - w / 2, sy - h / 2 - 4, w, h, h / 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = p.color;
-    ctx.beginPath();
-    ctx.arc(sx - w / 2 + 10, sy - 4, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = palette.text;
-    ctx.fillText(text, sx + 5, sy - 4);
+    for (const tag of this.podTags) {
+      ctx.fillStyle = palette.dark ? "rgba(20,20,24,0.82)" : "rgba(255,255,255,0.88)";
+      ctx.strokeStyle = rgba(hexToRgb(tag.pod.color), 0.6);
+      roundRect(ctx, tag.x, tag.y, tag.w, tag.h, tag.h / 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = tag.pod.color;
+      ctx.beginPath();
+      ctx.arc(tag.x + 10, tag.cy, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = palette.text;
+      ctx.fillText(tag.text, tag.cx + 5, tag.cy);
+    }
   }
 
   private drawHoverTag(): void {

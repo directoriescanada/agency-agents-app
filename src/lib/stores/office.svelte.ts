@@ -37,6 +37,8 @@ class OfficeStore {
   tasks: OfficeTask[] = $state([]);
   runner: OfficeRunnerStatus | null = $state(null);
   runnerChecked = $state(false);
+  /** True once the saved history has been read (or failed to). */
+  historyLoaded = $state(false);
   error: string | null = $state(null);
   /** Agent slug the office has focused (clicked desk). */
   selectedAgent: string | null = $state(null);
@@ -78,6 +80,7 @@ class OfficeStore {
         this.error = errorText(err);
       } finally {
         this.runnerChecked = true;
+        this.historyLoaded = true;
       }
     }
   }
@@ -137,6 +140,11 @@ class OfficeStore {
   }
 
   // ---------- Derived views ----------
+
+  /** Claude Code is installed and (as far as we can tell) signed in. */
+  get runnerReady(): boolean {
+    return this.runner?.available === true && this.runner?.loggedIn !== false;
+  }
 
   get running(): OfficeTask[] {
     return this.tasks.filter((t) => t.status === "running");

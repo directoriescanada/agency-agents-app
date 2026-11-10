@@ -10,22 +10,21 @@
    * works and the deliverable lands in the feed and on disk.
    */
   import { onMount } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
 
   import { corpus } from "$lib/stores/corpus.svelte";
   import { office } from "$lib/stores/office.svelte";
-  import { toast } from "$lib/stores/toast.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { ui } from "$lib/stores/ui.svelte";
   import { AGENCY_NAME } from "$lib/util/brand";
-  import { errorText, type Agent, type OfficeTask } from "$lib/types";
-  import type { SceneDepartment } from "$lib/office/scene";
+  import type { Agent, OfficeTask } from "$lib/types";
+  import { buildDepartments } from "$lib/office/scene";
+  import { formatCost, formatElapsed, revealDeliverable, statusLabel, statusTone } from "$lib/office/format";
 
   import OfficeCanvas from "./OfficeCanvas.svelte";
+  import OfficeComposer from "./OfficeComposer.svelte";
   import Button from "./Button.svelte";
   import Pill from "./Pill.svelte";
 
-  import Send from "@lucide/svelte/icons/send";
   import Square from "@lucide/svelte/icons/square";
   import Maximize from "@lucide/svelte/icons/maximize";
   import ZoomIn from "@lucide/svelte/icons/zoom-in";
@@ -36,8 +35,6 @@
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
 
   let canvasRef: OfficeCanvas | undefined = $state();
-  let sending = $state(false);
-  let textarea: HTMLTextAreaElement | undefined = $state();
 
   onMount(() => {
     void corpus.ensureLoaded();
@@ -45,23 +42,8 @@
   });
 
   // ---------- Roster → scene ----------
-  const departments: SceneDepartment[] = $derived.by(() => {
-    const byCat = new Map<string, Agent[]>();
-    for (const a of corpus.agents) {
-      const list = byCat.get(a.category) ?? [];
-      list.push(a);
-      byCat.set(a.category, list);
-    }
-    return [...byCat.entries()].map(([slug, agents]) => ({
-      slug,
-      label: corpus.labelOf(slug),
-      color: corpus.colorOf(slug),
-      agents: agents.map((a) => ({ slug: a.slug, name: a.name, emoji: a.emoji })),
-    }));
-  });
-
-  const agentsInDept = $derived(
-    office.composerDepartment ? corpus.agents.filter((a) => a.category === office.composerDepartment) : corpus.agents,
+  const departments = $derived(
+    buildDepartments(corpus.agents, (slug) => corpus.labelOf(slug), (slug) => corpus.colorOf(slug)),
   );
 
   const selectedAgent: Agent | null = $derived(
@@ -70,18 +52,6 @@
   const selectedTask: OfficeTask | null = $derived(
     office.selectedTask ? (office.tasks.find((t) => t.id === office.selectedTask) ?? null) : null,
   );
-
-  /** Who the composer would send to right now (local guess until sent). */
-  const routedAgent: Agent | null = $derived.by(() => {
-    if (office.composerAgent) return corpus.agents.find((a) => a.slug === office.composerAgent) ?? null;
-    if (!office.draft.trim()) return null;
-    return office.guess(office.draft, corpus.agents, office.composerDepartment);
-  });
-  const autoRouting = $derived(!office.composerAgent);
-
-  const runnerReady = $derived(office.runner?.available === true && office.runner?.loggedIn !== false);
-  const canSend = $derived(!!office.draft.trim() && !!routedAgent && !sending && runnerReady);
-  let routing = $state(false);
 
   // ---------- Picks from the floor ----------
   function pickAgent(slug: string) {
@@ -105,79 +75,8 @@
     office.selectedTask = null;
   }
 
-  function onDeptChange(e: Event) {
-    const v = (e.currentTarget as HTMLSelectElement).value;
-    office.composerDepartment = v || null;
-    office.composerAgent = null;
-  }
-  function onAgentChange(e: Event) {
-    const v = (e.currentTarget as HTMLSelectElement).value;
-    office.composerAgent = v || null;
-  }
-
-  // ---------- Dispatch ----------
-  async function send() {
-    let agent = routedAgent;
-    const prompt = office.draft.trim();
-    if (!agent || !prompt || sending) return;
-    sending = true;
-    try {
-      if (autoRouting) {
-        routing = true;
-        agent = (await office.route(prompt, corpus.agents, office.composerDepartment)) ?? agent;
-        routing = false;
-      }
-      const task = await office.dispatch(agent.slug, prompt, AGENCY_NAME);
-      office.draft = "";
-      office.selectedTask = task.id;
-      office.selectedAgent = null;
-      toast.info(i18n.t("office.toast.sent", { agent: agent.name }));
-    } catch (err) {
-      toast.error(i18n.t("office.toast.failed"), errorText(err));
-    } finally {
-      sending = false;
-      routing = false;
-    }
-  }
-
-  function onKey(e: KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      void send();
-    }
-  }
-
-  async function reveal(path: string) {
-    try {
-      await invoke("reveal_path", { path });
-    } catch (err) {
-      toast.error(i18n.t("office.toast.revealFailed"), errorText(err));
-    }
-  }
-
-  // ---------- Presentation helpers ----------
-  function elapsed(t: OfficeTask): string {
-    const end = t.finishedAt ? Date.parse(t.finishedAt) : office.now;
-    const s = Math.max(0, Math.round((end - Date.parse(t.startedAt)) / 1000));
-    if (s < 60) return `${s}s`;
-    const m = Math.floor(s / 60);
-    return `${m}m ${s % 60}s`;
-  }
-  function tone(t: OfficeTask): "info" | "success" | "danger" | "neutral" {
-    if (t.status === "running") return "info";
-    if (t.status === "done") return "success";
-    if (t.status === "error") return "danger";
-    return "neutral";
-  }
-  function statusLabel(t: OfficeTask): string {
-    return i18n.t(`office.status.${t.status}` as Parameters<typeof i18n.t>[0]);
-  }
   function emojiOf(slug: string): string {
     return corpus.agents.find((a) => a.slug === slug)?.emoji ?? "";
-  }
-  function cost(t: OfficeTask): string | null {
-    if (t.costUsd == null) return null;
-    return t.costUsd < 0.01 ? "<$0.01" : `$${t.costUsd.toFixed(2)}`;
   }
 </script>
 
@@ -210,7 +109,7 @@
 
   <aside class="panel">
     <!-- Runner status -->
-    <div class="runner" class:ok={runnerReady} class:missing={office.runnerChecked && !runnerReady}>
+    <div class="runner" class:ok={office.runnerReady} class:missing={office.runnerChecked && !office.runnerReady}>
       {#if !office.runnerChecked}
         <span class="runner-dot"></span>{i18n.t("office.runner.checking")}
       {:else if office.runner?.available && office.runner.loggedIn === false}
@@ -226,44 +125,7 @@
       {/if}
     </div>
 
-    <!-- Composer -->
-    <section class="composer">
-      <div class="row">
-        <select class="sel" value={office.composerDepartment ?? ""} onchange={onDeptChange} aria-label={i18n.t("office.department")}>
-          <option value="">{i18n.t("office.anyDepartment")}</option>
-          {#each departments as d (d.slug)}
-            <option value={d.slug}>{d.label}</option>
-          {/each}
-        </select>
-        <select class="sel" value={office.composerAgent ?? ""} onchange={onAgentChange} aria-label={i18n.t("office.agent")}>
-          <option value="">{i18n.t("office.pickForMe")}</option>
-          {#each agentsInDept as a (a.slug)}
-            <option value={a.slug}>{a.emoji ? `${a.emoji} ` : ""}{a.name}</option>
-          {/each}
-        </select>
-      </div>
-      <textarea
-        bind:this={textarea}
-        bind:value={office.draft}
-        rows="3"
-        placeholder={i18n.t("office.placeholder")}
-        onkeydown={onKey}
-      ></textarea>
-      <div class="row send-row">
-        <span class="routed">
-          {#if routing}
-            {i18n.t("office.routing")}
-          {:else if routedAgent}
-            {autoRouting ? i18n.t("office.probablyGoesTo") : i18n.t("office.goesTo")} <strong>{routedAgent.emoji ? `${routedAgent.emoji} ` : ""}{routedAgent.name}</strong>
-          {:else}
-            {i18n.t("office.goesToHint")}
-          {/if}
-        </span>
-        <Button variant="primary" size="sm" disabled={!canSend} loading={sending} onclick={send} title={autoRouting ? i18n.t("office.sendTitleAuto") : i18n.t("office.sendTitle")}>
-          <Send size={14} /> {i18n.t("office.send")}
-        </Button>
-      </div>
-    </section>
+    <OfficeComposer />
 
     <!-- Detail or feed -->
     {#if selectedTask}
@@ -273,10 +135,10 @@
         <header class="detail-head">
           <div class="who">{emojiOf(t.agentSlug)} <strong>{t.agentName}</strong> <span class="muted">· {corpus.labelOf(t.department)}</span></div>
           <div class="meta">
-            <Pill tone={tone(t)}>{statusLabel(t)}</Pill>
-            <span class="muted">{elapsed(t)}</span>
+            <Pill tone={statusTone(t)}>{statusLabel(t)}</Pill>
+            <span class="muted">{formatElapsed(t, office.now)}</span>
             {#if t.numTurns != null}<span class="muted">· {i18n.t("office.turns", { count: t.numTurns })}</span>{/if}
-            {#if cost(t)}<span class="muted">· {cost(t)}</span>{/if}
+            {#if formatCost(t.costUsd)}<span class="muted">· {formatCost(t.costUsd)}</span>{/if}
           </div>
         </header>
         <p class="prompt">{t.prompt}</p>
@@ -293,10 +155,13 @@
         </div>
         <div class="actions">
           {#if t.status === "running"}
-            <Button variant="danger" size="sm" onclick={() => office.cancel(t.id)}><Square size={12} /> {i18n.t("office.stop")}</Button>
+            <Button variant="danger" size="sm" onclick={() => office.cancel(t.id)}>
+              {#snippet icon()}<Square size={12} />{/snippet}
+              {i18n.t("office.stop")}
+            </Button>
           {/if}
           {#if t.deliverablePath}
-            <Button variant="secondary" size="sm" onclick={() => reveal(t.deliverablePath!)}><FolderOpen size={12} /> {i18n.t("office.reveal")}</Button>
+            <Button variant="secondary" size="sm" onclick={() => revealDeliverable(t.deliverablePath!)}><FolderOpen size={12} /> {i18n.t("office.reveal")}</Button>
           {/if}
         </div>
       </section>
@@ -321,7 +186,7 @@
           <ul class="feed">
             {#each office.tasksFor(a.slug) as t (t.id)}
               <li><button class="feed-item" onclick={() => (office.selectedTask = t.id)}>
-                <span class="fi-top"><Pill tone={tone(t)}>{statusLabel(t)}</Pill><span class="muted">{elapsed(t)}</span></span>
+                <span class="fi-top"><Pill tone={statusTone(t)}>{statusLabel(t)}</Pill><span class="muted">{formatElapsed(t, office.now)}</span></span>
                 <span class="fi-prompt">{t.prompt}</span>
               </button></li>
             {/each}
@@ -339,10 +204,10 @@
               <li><button class="feed-item" onclick={() => (office.selectedTask = t.id)}>
                 <span class="fi-top">
                   <span class="fi-who">{emojiOf(t.agentSlug)} {t.agentName}</span>
-                  <Pill tone={tone(t)}>{statusLabel(t)}</Pill>
+                  <Pill tone={statusTone(t)}>{statusLabel(t)}</Pill>
                 </span>
                 <span class="fi-prompt">{t.prompt}</span>
-                <span class="fi-meta muted">{corpus.labelOf(t.department)} · {elapsed(t)}{#if t.toolsUsed.length} · {t.toolsUsed.length} {i18n.t("office.toolsShort")}{/if}</span>
+                <span class="fi-meta muted">{corpus.labelOf(t.department)} · {formatElapsed(t, office.now)}{#if t.toolsUsed.length} · {t.toolsUsed.length} {i18n.t("office.toolsShort")}{/if}</span>
               </button></li>
             {/each}
           </ul>
@@ -442,43 +307,6 @@
   .runner.missing { color: var(--color-warning-strong); background: var(--color-warning-subtle); }
   .runner.missing .runner-dot { background: var(--color-warning); }
   .runner-retry { margin-left: auto; border: 0; background: transparent; color: inherit; cursor: pointer; display: grid; place-items: center; }
-
-  .composer {
-    padding: 12px 14px;
-    border-bottom: 1px solid var(--color-border);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .row { display: flex; gap: 8px; align-items: center; }
-  .sel {
-    flex: 1;
-    min-width: 0;
-    font: inherit;
-    font-size: 12px;
-    padding: 5px 8px;
-    border: 1px solid var(--color-border-strong);
-    border-radius: 6px;
-    background: var(--color-surface-raised);
-    color: var(--color-text-primary);
-  }
-  textarea {
-    width: 100%;
-    resize: vertical;
-    min-height: 64px;
-    font: inherit;
-    font-size: 13px;
-    line-height: 1.4;
-    padding: 8px 10px;
-    border: 1px solid var(--color-border-strong);
-    border-radius: 8px;
-    background: var(--color-surface-raised);
-    color: var(--color-text-primary);
-  }
-  textarea:focus { outline: none; border-color: var(--color-border-focus); box-shadow: var(--shadow-focus-ring); }
-  .send-row { justify-content: space-between; }
-  .routed { font-size: 11.5px; color: var(--color-text-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .routed strong { color: var(--color-text-primary); font-weight: 600; }
 
   .feedwrap, .detail {
     flex: 1;
