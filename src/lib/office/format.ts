@@ -21,6 +21,9 @@ export function formatDuration(ms: number): string {
 
 /** Time a task has taken: to its finish, or to `nowMs` while it runs. */
 export function formatElapsed(t: OfficeTask, nowMs: number): string {
+  // A finished task reports its measured run time, the figure the dashboard
+  // shows too; the timestamps are only whole seconds.
+  if (t.finishedAt && t.durationMs != null) return formatDuration(t.durationMs);
   const end = t.finishedAt ? Date.parse(t.finishedAt) : nowMs;
   return formatDuration(end - Date.parse(t.startedAt));
 }
